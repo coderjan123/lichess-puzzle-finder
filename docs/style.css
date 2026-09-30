@@ -1,0 +1,625 @@
+/* ------------------------------------------------------------------
+   Lichess Puzzle Finder - Oberfläche
+   Mobile first, zwei Ansichten (dunkel/hell) über CSS-Variablen.
+   ------------------------------------------------------------------ */
+
+:root {
+  --bg: #161512;
+  --bg-2: #1e1d19;
+  --bg-3: #2a2823;
+  --line: #3a3730;
+  --fg: #eae8e2;
+  --fg-dim: #a5a196;
+  --accent: #629924;
+  --accent-2: #7cb342;
+  --accent-fg: #fff;
+  --danger: #c62828;
+  --board-light: #b0a798;
+  --board-dark: #7b6c5c;
+  --radius: 12px;
+  --tap: 46px;
+  --shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f1ec;
+    --bg-2: #fff;
+    --bg-3: #e8e6de;
+    --line: #d6d3c8;
+    --fg: #1c1b18;
+    --fg-dim: #5f5c53;
+    --accent: #629924;
+    --shadow: 0 1px 6px rgb(0 0 0 / 0.12);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* [hidden] muss auch bei display:flex/grid gewinnen. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding-bottom: env(safe-area-inset-bottom);
+  overscroll-behavior-y: none;
+}
+
+h1,
+h2 {
+  margin: 0;
+  font-weight: 650;
+}
+
+h1 {
+  font-size: 1.05rem;
+}
+
+h2 {
+  font-size: 0.95rem;
+}
+
+.muted {
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.hint {
+  color: var(--fg-dim);
+  font-size: 0.82rem;
+  margin: 0.6rem 0 0;
+}
+
+.center {
+  text-align: center;
+}
+
+/* ------------------------------ Kopfzeile ------------------------------ */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: max(0.5rem, env(safe-area-inset-top)) 0.9rem 0.5rem;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar h1 {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topmeta {
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  margin-left: -0.35rem;
+  font-size: 1.6rem;
+  line-height: 1;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.icon-btn:active {
+  background: var(--bg-3);
+}
+
+/* -------------------------------- Layout ------------------------------- */
+
+#main {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0.8rem 0.8rem 6rem;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+.card {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.85rem;
+  margin-bottom: 0.8rem;
+  box-shadow: var(--shadow);
+}
+
+.card-head,
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.card-foot {
+  margin-top: 0.6rem;
+}
+
+.card-foot button {
+  border: 0;
+  background: none;
+  color: var(--accent-2);
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.8rem;
+}
+
+.row > button {
+  flex: 1 1 140px;
+}
+
+.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.two label {
+  display: block;
+}
+
+.two label span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--fg-dim);
+  margin-bottom: 0.2rem;
+}
+
+input[type='search'],
+input[type='number'] {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.5rem 0.7rem;
+  font-size: 1rem;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+input[type='search'] {
+  margin: 0.7rem 0;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+
+/* ------------------------------- Buttons ------------------------------- */
+
+button {
+  min-height: var(--tap);
+  padding: 0.5rem 0.9rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--fg);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  cursor: default;
+}
+
+button.primary:disabled {
+  background: var(--bg-3);
+  border-color: var(--line);
+  color: var(--fg-dim);
+  opacity: 0.7;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+button.big {
+  min-height: 54px;
+  font-size: 1.05rem;
+  width: 100%;
+}
+
+.seg {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.seg.stack {
+  flex-direction: column;
+}
+
+.seg button {
+  flex: 1;
+  text-align: left;
+}
+
+.seg-stack button {
+  text-align: left;
+}
+
+.seg button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chips button {
+  min-height: 38px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+/* --------------------------- Theme-Auswahl ----------------------------- */
+
+.theme-list {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.4rem;
+  background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+}
+
+.group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  padding: 0.45rem 0.3rem 0.3rem;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 42px;
+  margin-bottom: 0.25rem;
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  background: var(--bg-2);
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 0.92rem;
+}
+
+.chip .n {
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.on {
+  background: color-mix(in srgb, var(--accent) 26%, var(--bg-2));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.chip.on .n {
+  color: var(--fg);
+}
+
+/* ------------------------------ Aktionen ------------------------------- */
+
+.actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin: 0 -0.8rem -6rem;
+  padding: 0.7rem 0.8rem calc(0.7rem + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+}
+
+.estimate {
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  text-align: center;
+  margin-bottom: 0.45rem;
+  min-height: 1.1em;
+}
+
+/* ------------------------------ Ergebnisse ----------------------------- */
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.results li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+
+.results li:last-child {
+  border-bottom: 0;
+}
+
+.results a.item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 52px;
+  color: var(--fg);
+  text-decoration: none;
+  padding: 0.4rem 0.8rem;
+}
+
+.results a.item:active {
+  background: var(--bg-3);
+}
+
+/* Schon angesehene Puzzles markiert der Browser selbst. */
+.results a.item:visited .rating,
+.results a.item:visited .id {
+  color: var(--fg-dim);
+  opacity: 0.6;
+}
+
+.results .pos {
+  color: var(--fg-dim);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.2em;
+}
+
+.results .rating {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.4em;
+}
+
+.results .id {
+  color: var(--fg-dim);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.results .flag {
+  padding: 0 0.8rem;
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
+#resultInfo {
+  font-size: 0.92rem;
+}
+
+#resultInfo b {
+  color: var(--fg);
+}
+
+/* ------------------------- Hinweis bei file:// ------------------------- */
+
+#fileHint {
+  max-width: 620px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.hint-box {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  box-shadow: var(--shadow);
+}
+
+.hint-box h2 {
+  margin-bottom: 0.7rem;
+  font-size: 1.1rem;
+}
+
+.hint-box p {
+  margin: 0 0 0.8rem;
+  line-height: 1.5;
+}
+
+code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: var(--bg-3);
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+
+.cmds code {
+  display: inline-block;
+  padding: 0.35rem 0.6rem;
+  margin: 0.1rem 0;
+}
+
+.big-link {
+  display: inline-block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  padding: 0.6rem 1rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 10px;
+  text-decoration: none;
+}
+
+/* -------------------------- Ladeanzeige / Toast ------------------------ */
+
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.55);
+  padding: 1.2rem;
+}
+
+.loading-box {
+  width: min(340px, 100%);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.1rem;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.loading-box .progress {
+  max-width: none;
+  margin: 0.8rem 0;
+}
+
+#statusCard,
+.resume {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.resume-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.resume-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.resume-actions button {
+  min-height: 40px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent-2);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner.big {
+  width: 30px;
+  height: 30px;
+  margin: 0 auto 0.7rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.6rem 1rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  box-shadow: var(--shadow);
+  max-width: 90vw;
+  text-align: center;
+}
+
+.toast[hidden],
+.loading[hidden],
+.board-overlay[hidden] {
+  display: none;
+}
+
+@media (min-width: 700px) {
+  .theme-list {
+    max-height: 380px;
+  }
+  .seg.stack {
+    flex-direction: row;
+  }
+}

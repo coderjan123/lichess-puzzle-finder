@@ -1,0 +1,21 @@
+{
+  "name": "lichess-puzzle-finder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Theme-basierte Lichess-Puzzle-Suche als statische Website",
+  "scripts": {
+    "build": "node build/bundle.mjs",
+    "data": "python3 build/build_index.py /home/jan/lichess_db_puzzle.csv docs/data",
+    "serve": "node build/serve.mjs 8123 --host 0.0.0.0",
+    "test:data": "node build/verify.mjs",
+    "test:ui": "node build/uitest.mjs"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "^1.63.0"
+  }
+}
