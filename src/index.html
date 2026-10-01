@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Lichess Puzzle Finder</title>
     <meta
       name="description"
-      content="Lichess-Puzzles nach Theme, Rating und Anzahl aus 6,1 Millionen Puzzles auswählen - im Browser, ohne die 1,1-GB-Datenbank zu installieren."
+      content="Pick lichess puzzles by theme, rating and count from 6.1 million puzzles - in the browser, without installing the 1.1 GB database."
     />
     <meta name="theme-color" content="#161512" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#f0f0f0" media="(prefers-color-scheme: light)" />
@@ -16,7 +16,7 @@
   </head>
   <body>
     <header class="topbar">
-      <button id="backBtn" class="icon-btn" type="button" aria-label="Zurück" hidden>‹</button>
+      <button id="backBtn" class="icon-btn" type="button" aria-label="Back" hidden>‹</button>
       <h1 id="viewTitle">Lichess Puzzle Finder</h1>
       <span id="topMeta" class="topmeta"></span>
     </header>
@@ -26,7 +26,7 @@
       <section class="view" id="viewHome">
         <div class="card" id="statusCard">
           <span class="spinner" aria-hidden="true"></span>
-          <span id="statusText">Index wird geladen …</span>
+          <span id="statusText">Loading index …</span>
         </div>
 
         <div class="card resume" id="resumeCard" hidden>
@@ -35,8 +35,8 @@
             <span id="resumeInfo" class="muted"></span>
           </div>
           <div class="resume-actions">
-            <button type="button" class="primary" id="resumeBtn">Weiterspielen</button>
-            <button type="button" id="resumeDrop">Verwerfen</button>
+            <button type="button" class="primary" id="resumeBtn">Open list</button>
+            <button type="button" id="resumeDrop">Discard</button>
           </div>
         </div>
 
@@ -49,32 +49,32 @@
             <input
               type="search"
               id="themeSearch"
-              placeholder="Theme suchen, z. B. Matt"
+              placeholder="Search themes, e.g. fork"
               enterkeyhint="search"
-              aria-label="Theme suchen"
+              aria-label="Search themes"
             />
             <div class="theme-list" id="themeList" role="group" aria-label="Themes"></div>
             <div class="card-foot">
-              <button type="button" id="clearThemes">Auswahl leeren</button>
+              <button type="button" id="clearThemes">Clear selection</button>
               <span class="muted" id="selInfo"></span>
             </div>
           </div>
 
           <div class="card" id="modeCard" hidden>
-            <div class="card-head"><h2>2 · Verknüpfung</h2></div>
+            <div class="card-head"><h2>2 · Combine</h2></div>
             <div class="seg" id="modeSeg">
-              <button type="button" data-v="OR" class="on">ODER · ein Theme reicht</button>
-              <button type="button" data-v="AND">UND · alle Themes</button>
+              <button type="button" data-v="OR" class="on">OR · one theme is enough</button>
+              <button type="button" data-v="AND">AND · all themes</button>
             </div>
             <p class="hint" id="modeHint"></p>
           </div>
 
           <div class="card">
-            <div class="card-head"><h2>3 · Reihenfolge</h2></div>
+            <div class="card-head"><h2>3 · Order</h2></div>
             <div class="seg seg-stack" id="orderSeg">
-              <button type="button" data-v="hardest" class="on">Schwerste zuerst</button>
-              <button type="button" data-v="easiest">Einfachste zuerst</button>
-              <button type="button" data-v="range">Rating-Range</button>
+              <button type="button" data-v="hardest" class="on">Hardest first</button>
+              <button type="button" data-v="easiest">Easiest first</button>
+              <button type="button" data-v="range">Rating range</button>
             </div>
             <div id="rangeBox" hidden>
               <div class="two">
@@ -92,10 +92,10 @@
           </div>
 
           <div class="card">
-            <div class="card-head"><h2>4 · Anzahl</h2></div>
+            <div class="card-head"><h2>4 · How many</h2></div>
             <div class="two">
               <label>
-                <span>Anzahl</span>
+                <span>Count</span>
                 <input type="number" id="count" inputmode="numeric" min="1" max="5000" value="100" />
               </label>
               <div class="chips" id="countPresets"></div>
@@ -105,23 +105,24 @@
 
         <div class="actionbar">
           <div class="estimate" id="estimate"></div>
-          <button type="button" class="primary big" id="searchBtn" disabled>Puzzles suchen</button>
+          <button type="button" class="primary big" id="searchBtn" disabled>Find puzzles</button>
         </div>
       </section>
 
-      <!-- =========================== ERGEBNIS ========================== -->
+      <!-- =========================== RESULTS ========================== -->
       <section class="view" id="viewResults" hidden>
         <div class="card" id="resultInfo"></div>
         <div class="row">
-          <button type="button" class="primary" id="playFirst">▶ Auf lichess öffnen</button>
-          <button type="button" id="copyIds">IDs kopieren</button>
+          <button type="button" class="primary" id="playFirst">▶ Open on lichess</button>
+          <button type="button" id="copyIds">Copy IDs</button>
         </div>
-        <p class="hint center">Jede Zeile öffnet das Puzzle bei lichess in einem neuen Tab.</p>
+        <p class="hint center">Every row opens the puzzle on lichess in a new tab.</p>
         <ol class="results" id="resultList"></ol>
         <p class="hint center" id="snapshotNote"></p>
         <p class="hint center">
-          <b>IDs kopieren</b> und bei lichess.org unter <b>Training → Importieren</b> einfügen –
-          dann spielt lichess die ganze Liste mit Rating-Verlauf ab.
+          <b>Copy IDs</b> and paste the list into lichess.org under
+          <b>Training → Import</b> – lichess then plays through the whole list and
+          shows the rating history.
         </p>
       </section>
 
@@ -130,13 +131,20 @@
     <div class="loading" id="loading" hidden>
       <div class="loading-box">
         <div class="spinner big" aria-hidden="true"></div>
-        <div id="loadingText">Daten werden geladen …</div>
+        <div id="loadingText">Loading data …</div>
         <div class="progress"><div class="progress-bar" id="loadBar"></div></div>
-        <button type="button" id="loadCancel">Abbrechen</button>
+        <button type="button" id="loadCancel">Cancel</button>
       </div>
     </div>
 
     <div class="toast" id="toast" hidden></div>
+
+    <footer class="footer">
+      Puzzle data from the
+      <a href="https://database.lichess.org/" target="_blank" rel="noopener">lichess open database</a>
+      (CC0). Ratings are a snapshot of the CSV build, lichess re-rates puzzles
+      continuously. Not affiliated with lichess.
+    </footer>
 
     <!--
       Wird die Datei per Doppelklick geöffnet (file://), funktionieren weder
@@ -147,19 +155,22 @@
     -->
     <div id="fileHint" hidden>
       <div class="hint-box">
-        <h2>Bitte über den Server öffnen</h2>
+        <h2>Please open it through a web server</h2>
         <p>
-          Diese Seite lässt sich nicht per Doppelklick starten: der Browser
-          verbietet bei <code>file://</code> Module und Datenzugriffe aus fremden
-          Herkünften. Über einen kleinen Webserver läuft alles.
+          This page cannot be started by double-clicking it: for
+          <code>file://</code> the browser blocks both modules and data requests
+          from other origins. Everything works through a small web server.
         </p>
         <p class="cmds">
           <code>cd ~/lichess-puzzle-finder</code><br />
           <code>node build/serve.mjs 8123</code>
         </p>
-        <p>Dann im Browser öffnen:</p>
+        <p>Then open in the browser:</p>
         <p><a class="big-link" href="http://127.0.0.1:8123/">http://127.0.0.1:8123/</a></p>
-        <p class="muted">Mit <code>--host 0.0.0.0</code> zusätzlich unter der LAN-Adresse erreichbar.</p>
+        <p class="muted">
+          With <code>--host 0.0.0.0</code> it is also reachable from your phone on
+          the same network.
+        </p>
       </div>
     </div>
 

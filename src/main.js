@@ -12,8 +12,8 @@ import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, e
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'lpf.lastSearch.v1';
-const nf = new Intl.NumberFormat('de-DE');
-const compact = new Intl.NumberFormat('de-DE', { notation: 'compact', maximumFractionDigits: 1 });
+const nf = new Intl.NumberFormat('en-US');
+const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
 const el = {
   back: $('backBtn'),
@@ -75,7 +75,7 @@ function show(name, push = true) {
   current = name;
   for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
   el.back.hidden = name === 'home';
-  el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Ergebnis';
+  el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Results';
   if (push) history.pushState({ view: name }, '', '#' + name);
   window.scrollTo(0, 0);
 }
@@ -87,7 +87,7 @@ window.addEventListener('popstate', (e) => {
   current = name;
   for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
   el.back.hidden = name === 'home';
-  el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Ergebnis';
+  el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Results';
 });
 
 // ---------------------------------------------------------------- Toast
@@ -116,7 +116,7 @@ function registerServiceWorker() {
 }
 
 init().catch((err) => {
-  el.statusText.textContent = 'Fehler: ' + err.message;
+  el.statusText.textContent = 'Error: ' + err.message;
   el.status.hidden = false;
   console.error(err);
 });
@@ -183,7 +183,7 @@ function renderThemes(filter = '') {
   if (!shown) {
     const p = document.createElement('p');
     p.className = 'hint';
-    p.textContent = 'Nichts gefunden.';
+    p.textContent = 'Nothing found.';
     frag.append(p);
   }
 
@@ -265,10 +265,10 @@ function updateModeCard() {
 
   if (state.mode === 'OR') {
     el.modeHint.textContent =
-      'Ein Puzzle zählt, wenn es mindestens eines der gewählten Themes hat.';
+      'A puzzle counts if it has at least one of the selected themes.';
     return;
   }
-  el.modeHint.textContent = 'Ein Puzzle zählt nur, wenn es alle gewählten Themes hat.';
+  el.modeHint.textContent = 'A puzzle counts only if it has all of the selected themes.';
   el.modeHint.append(' ' + impossibleHint());
 }
 
@@ -280,7 +280,7 @@ function updateModeCard() {
 function impossibleHint() {
   const pair = impossiblePair();
   if (!pair) return '';
-  return `Achtung: ${label(pair[0])} und ${label(pair[1])} kommen in den 6,1 Mio. Puzzles nie gleichzeitig vor – eine UND-Suche liefert dort nichts. Mit ODER geht es.`;
+  return `Note: ${label(pair[0])} and ${label(pair[1])} never occur together in the 6.1 million puzzles - an AND search finds nothing. OR works.`;
 }
 
 /** Das erste ausgewählte Paar, das nie gemeinsam vorkommt (oder null). */
@@ -297,18 +297,18 @@ function impossiblePair() {
 
 function update() {
   const count = state.selected.size;
-  el.themeCount.textContent = count ? `${count} gewählt` : 'keine Auswahl';
-  el.selInfo.textContent = count ? '' : 'Mindestens ein Theme wählen';
+  el.themeCount.textContent = count ? `${count} selected` : 'nothing selected';
+  el.selInfo.textContent = count ? '' : 'Pick at least one theme';
   updateModeCard();
 
   const query = buildQuery();
   el.searchBtn.disabled = !(count > 0 && query.count > 0 && query.min <= query.max);
 
   if (state.order === 'range' && query.min > query.max) {
-    el.estimate.textContent = 'Min darf nicht größer als Max sein';
+    el.estimate.textContent = 'Min must not be greater than max';
   } else if (count && state.manifest) {
     if (query.mode === 'AND' && impossiblePair()) {
-      el.estimate.textContent = 'Diese UND-Kombination gibt es in den Daten nicht – 0 Treffer';
+      el.estimate.textContent = 'This AND combination does not exist in the data - 0 results';
       el.estimate.classList.add('warn');
       return;
     }
@@ -320,10 +320,9 @@ function update() {
       const max = estimateAll(state.manifest, query);
       const min = estimateBytes(state.manifest, query);
       el.estimate.textContent =
-        `UND liest beide Themes von oben her und stoppt bei ${query.count} Treffern: ` +
-        `mindestens ${fmtBytes(min)}, höchstens ${fmtBytes(max)}.`;
+        `AND stops at ${query.count} results: at least ${fmtBytes(min)}, at most ${fmtBytes(max)}`;
     } else {
-      el.estimate.textContent = `Daten für diese Suche: rund ${fmtBytes(estimateAll(state.manifest, query))}`;
+      el.estimate.textContent = `Data for this search: about ${fmtBytes(estimateAll(state.manifest, query))}`;
     }
   } else {
     el.estimate.textContent = '';
@@ -333,7 +332,7 @@ function update() {
 function fmtBytes(n) {
   if (n < 1024) return n + ' Bytes';
   if (n < 1048576) return Math.round(n / 1024) + ' kB';
-  return (n / 1048576).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' MB';
+  return (n / 1048576).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' MB';
 }
 
 /** Für die Themesuche: nur Buchstaben und Zahlen, kleingeschrieben. */
@@ -400,7 +399,7 @@ async function search() {
   const controller = new AbortController();
   el.loading.hidden = false;
   el.loadBar.style.width = '0%';
-  el.loadingText.textContent = 'Daten werden geladen …';
+  el.loadingText.textContent = 'Loading data …';
   el.loadCancel.onclick = () => controller.abort();
 
   const t0 = performance.now();
@@ -411,12 +410,12 @@ async function search() {
       onBytes: (b) => {
         const target = Math.max(estimateRaw(state.manifest, query), 1);
         el.loadBar.style.width = `${Math.min(100, (b / target) * 100)}%`;
-        el.loadingText.textContent = `${fmtBytes(b)} entpackt …`;
+        el.loadingText.textContent = `${fmtBytes(b)} decompressed …`;
       },
     });
 
     if (cancelled) {
-      toast('Suche abgebrochen');
+      toast('Search cancelled');
       return;
     }
 
@@ -425,13 +424,13 @@ async function search() {
       const pair = impossiblePair();
       toast(
         pair
-          ? `${label(pair[0])} und ${label(pair[1])} kommen nie gemeinsam vor – 0 Treffer`
-          : 'Diese UND-Kombination liefert 0 Treffer',
+          ? `${label(pair[0])} and ${label(pair[1])} never occur together - 0 results`
+          : 'This AND combination returns 0 results',
       );
       return;
     }
 
-    el.loadingText.textContent = 'Ergebnis wird aufgebaut …';
+    el.loadingText.textContent = 'Building the list …';
     state.results = items;
     saveLastSearch(query, items);
     renderResults();
@@ -441,12 +440,12 @@ async function search() {
     // Zeitmessung des Browsers keine Größen kennt) - dann content-length.
     const over = sumTransfers() || wire;
     toast(
-      `${items.length} Puzzles in ${ms} ms · ${fmtBytes(over)} übertragen` +
-        (bytes > over * 2 ? ` (${fmtBytes(bytes)} entpackt)` : ''),
+      `${items.length} puzzles in ${ms} ms · ${fmtBytes(over)} transferred` +
+        (bytes > over * 2 ? ` (${fmtBytes(bytes)} decompressed)` : ''),
     );
   } catch (err) {
     console.error(err);
-    toast('Fehler bei der Suche: ' + err.message);
+    toast('Search failed: ' + err.message);
   } finally {
     el.loading.hidden = true;
   }
@@ -460,9 +459,9 @@ function describeQuery(query) {
   const names = query.themes.map((t) => label(t)).join(query.mode === 'AND' ? ' ∩ ' : ' ∪ ');
   const order =
     query.order === 'hardest'
-      ? 'schwerste zuerst'
+      ? 'hardest first'
       : query.order === 'easiest'
-        ? 'einfachste zuerst'
+        ? 'easiest first'
         : `Rating ${query.min}–${query.max}`;
   return { names, order };
 }
@@ -474,11 +473,11 @@ function renderResults() {
   const avg = items.length ? Math.round(items.reduce((s, x) => s + x.rating, 0) / items.length) : 0;
 
   el.resultInfo.innerHTML = items.length
-    ? `<b>${nf.format(items.length)}</b> Puzzles · ${order}<br><span class="muted">${escapeHtml(names)}</span>` +
-      (items.length > 20 ? `<br><span class="muted">Ø Rating ${avg}</span>` : '')
-    : '<b>Keine Treffer.</b><br><span class="muted">Ratingfenster oder Theme-Kombination erweitern.</span>';
+    ? `<b>${nf.format(items.length)}</b> puzzles · ${order}<br><span class="muted">${escapeHtml(names)}</span>` +
+      (items.length > 20 ? `<br><span class="muted">Average rating ${avg}</span>` : '')
+    : '<b>No results.</b><br><span class="muted">Widen the rating range or the theme combination.</span>';
 
-  el.snapshotNote.textContent = `Ratings laut Datenbank-Stand ${state.manifest.generated}; lichess berechnet sie laufend neu.`;
+  el.snapshotNote.textContent = `Ratings are from the database snapshot of ${state.manifest.generated}; lichess re-rates puzzles continuously.`;
 
   const frag = document.createDocumentFragment();
   items.forEach((item, i) => {
@@ -492,7 +491,7 @@ function renderResults() {
       `<span class="pos">${i + 1}</span>` +
       `<span class="rating">${item.rating}</span>` +
       `<span class="id">${item.id}</span>`;
-    a.setAttribute('aria-label', `Puzzle ${item.id} mit Rating ${item.rating} auf lichess öffnen`);
+    a.setAttribute('aria-label', `Open puzzle ${item.id} with rating ${item.rating} on lichess`);
     const flag = document.createElement('span');
     flag.className = 'flag';
     flag.textContent = '↗';
@@ -502,7 +501,7 @@ function renderResults() {
   el.resultList.replaceChildren(frag);
 
   el.playFirst.disabled = items.length === 0;
-  el.playFirst.textContent = `▶ Auf lichess öffnen (${items.length})`;
+  el.playFirst.textContent = `▶ Open on lichess (${items.length})`;
   el.copyIds.disabled = items.length === 0;
 }
 
@@ -512,7 +511,7 @@ el.copyIds.onclick = async () => {
   const text = state.results.map((x) => x.id).join('\n');
   try {
     await navigator.clipboard.writeText(text);
-    toast(`${state.results.length} IDs kopiert`);
+    toast(`Copied ${state.results.length} IDs`);
   } catch {
     // Fallback für Browser ohne Clipboard-API
     const ta = document.createElement('textarea');
@@ -521,7 +520,7 @@ el.copyIds.onclick = async () => {
     ta.select();
     document.execCommand('copy');
     ta.remove();
-    toast(`${state.results.length} IDs kopiert`);
+    toast(`Copied ${state.results.length} IDs`);
   }
 };
 
@@ -549,9 +548,9 @@ function offerLastSearch() {
 
   const { names, order } = describeQuery(data.query);
   el.resume.hidden = false;
-  el.resumeTitle.textContent = `Letzte Suche: ${nf.format(data.items.length)} Puzzles`;
+  el.resumeTitle.textContent = `Last search: ${nf.format(data.items.length)} puzzles`;
   el.resumeInfo.textContent = `${names} · ${order}`;
-  el.resumeBtn.textContent = 'Liste öffnen';
+  el.resumeBtn.textContent = 'Open list';
   el.resumeBtn.onclick = () => {
     state.results = data.items;
     lastQuery = data.query;

@@ -3,13 +3,17 @@
  *
  * - index.html: "stale while revalidate" - sofort aus dem Cache liefern, im
  *   Hintergrund die neue Version holen. Beim nächsten Start ist sie da.
- * - data/*: dauerhaft im Cache. Die Dateien ändern sich nur mit einem neuen
- *   Build; dann ändert sich auch CACHE (siehe unten), also liefert der Worker
- *   nie veraltete Daten.
- * - Alles andere (Favicon): nur durchreichen.
+ * - Daten-Dateien und alles andere: nur durchreichen (siehe unten).
+ *
+ * Wichtig: Die Seite bricht laufende Downloads ab, sobald sie genug Treffer
+ * hat. Ein solcher Abbruch sieht für den Worker wie ein fehlgeschlagener
+ * Request aus. Ohne Fehlerbehandlung meldet der Browser dann
+ * "A ServiceWorker intercepted the request and encountered an unexpected
+ * error" - deshalb fängt der Handler jeden Fehler ab und antwortet mit einer
+ * leeren Response, statt das Versprechen scheitern zu lassen.
  */
 
-const CACHE = 'lpf-v2';
+const CACHE = 'lpf-v3';
 
 const SHELL = ['./', './index.html', './sw.js', './icon.svg'];
 
@@ -42,38 +46,33 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
-        const cache = await caches.open(CACHE);
-        const fresh = fetch(request)
-          .then((res) => {
-            if (res.ok) cache.put(request, res.clone());
-            return res;
-          })
-          .catch(() => null);
-        const cached = await cache.match(request);
-        if (cached) return cached;
-        const res = await fresh;
-        return res || new Response('Offline', { status: 503 });
+        try {
+          const cache = await caches.open(CACHE);
+          const fresh = fetch(request)
+            .then((res) => {
+              if (res.ok) cache.put(request, res.clone()).catch(() => {});
+              return res;
+            })
+            .catch(() => null);
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          const res = await fresh;
+          return res || new Response('Offline', { status: 503 });
+        } catch {
+          return new Response('Offline', { status: 503 });
+        }
       })(),
     );
     return;
   }
 
-  // Daten und Icon: aus dem Cache, sonst holen und ablegen.
-  if (url.pathname.includes('/data/') || url.pathname.endsWith('/icon.svg')) {
-    event.respondWith(
-      (async () => {
-        const cache = await caches.open(CACHE);
-        const cached = await cache.match(request);
-        if (cached) return cached;
-        const res = await fetch(request);
-        // Nur kleine Dateien cachen - ein 1,3-MB-Bucket gehört nicht in den
-        // Cache-Speicher des Browsers, der normalerweise bei ein paar MB endet.
-        if (res.ok && url.pathname.includes('/data/')) {
-          const len = Number(res.headers.get('content-length') || '0');
-          if (!len || len < 400_000) cache.put(request, res.clone());
-        }
-        return res;
-      })(),
-    );
-  }
+  // Daten und Icon: bewusst NICHTintercepten.
+  //
+  // Die Seite bricht laufende Downloads ab, sobald sie genug Treffer hat, und
+  // lädt viele Buckets gleichzeitig vor. Ein Service Worker dazwischen meldet
+  // solche Abbrüche als "encountered an unexpected error" - der Browser zeigt
+  // dann Fehler in der Konsole an, obwohl die Suche korrekt war. Für die
+  // Wiederholung einer Suche reicht der normale HTTP-Cache der Daten-Dateien
+  // (GitHub Pages liefert sie mit Cache-Control aus), und der Abbruch landet
+  // dort, wo er hingehört: in der Seite.
 });

@@ -141,6 +141,22 @@ h2 {
   padding: 0.8rem 0.8rem 6rem;
 }
 
+/* Quellenangabe: die Puzzledaten stammen aus der offenen Datenbank von lichess
+   (CC0), die Seite ist aber privat und nicht mit lichess verbunden. */
+.footer {
+  max-width: 780px;
+  margin: 1.6rem auto 0;
+  padding: 0 0.9rem 2rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  opacity: 0.8;
+}
+
+.footer a {
+  color: inherit;
+}
+
 .view[hidden] {
   display: none;
 }
@@ -373,8 +389,9 @@ button.big {
   z-index: 10;
   margin: 0 -0.8rem -6rem;
   padding: 0.7rem 0.8rem calc(0.7rem + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: blur(8px);
+  /* Deckend, nicht durchscheinend: der Balken liegt über dem Text darunter,
+     und halbtransparent durchscheinender Text sieht wie ein Fehler aus. */
+  background: var(--bg);
   border-top: 1px solid var(--line);
 }
 

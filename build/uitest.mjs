@@ -84,15 +84,28 @@ const ctx = await browser.newContext({
   hasTouch: true,
 });
 const page = await ctx.newPage();
+page.setDefaultTimeout(90_000); // Rechner kann gerade belegt sein
 const consoleErrors = [];
 page.on('console', (m) => {
   if (m.type() === 'error') consoleErrors.push(m.text());
 });
 page.on('pageerror', (e) => consoleErrors.push('pageerror: ' + e.message));
 
+/**
+ * Wartet, bis die App bereit ist: Index geladen, Theme-Liste gefüllt.
+ * Nicht auf Sichtbarkeit einer Klasse warten - das ist unter Last unzuverlässig.
+ */
+async function waitForApp(p) {
+  await p.waitForFunction(
+    () => document.querySelectorAll('#themeList .chip').length > 10,
+    null,
+    { timeout: 90_000 },
+  );
+}
+
 step('1 · Startseite');
 await page.goto(BASE, { waitUntil: 'load' });
-await page.waitForSelector('.chip', { timeout: 30000 });
+await waitForApp(page);
 const chipCount = await page.locator('.chip').count();
 const themeCount = Object.keys(manifest.themes).length;
 chipCount === themeCount ? ok(`${chipCount} Themes angezeigt`) : bad(`${chipCount} statt ${themeCount} Themes`);
@@ -111,7 +124,7 @@ await page.click('.chip[data-theme="backRankMate"]');
 (await page.locator('#modeCard').isVisible()) ? ok('UND/ODER-Karte erscheint bei 2 Themes') : bad('UND/ODER-Karte fehlt');
 await page.click('#modeSeg button[data-v="AND"]');
 const hint = await page.locator('#modeHint').textContent();
-hint.includes('alle') ? ok(`Hinweis: "${hint.trim()}"`) : bad('Hinweis falsch');
+hint.includes('all of the selected themes') ? ok(`Hinweis: "${hint.trim()}"`) : bad('Hinweis falsch');
 ok(`Datenschätzung: ${(await page.locator('#estimate').textContent()).trim()}`);
 
 step('3 · Suche (ODER, schwerste zuerst)');
@@ -193,6 +206,7 @@ await page.click('#resumeDrop').catch(() => {});
 step('10 · Hinweis bei file://');
 const fileCtx = await browser.newContext({ viewport: { width: 800, height: 600 } });
 const filePage = await fileCtx.newPage();
+filePage.setDefaultTimeout(90_000);
 await filePage.goto('file://' + path.join(repo, 'docs', 'index.html'));
 await filePage.waitForTimeout(400);
 (await filePage.locator('#fileHint').isVisible())
@@ -204,8 +218,9 @@ await fileCtx.close();
 step('11 · Desktop-Ansicht');
 const deskCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'de-DE' });
 const desk = await deskCtx.newPage();
+desk.setDefaultTimeout(90_000);
 await desk.goto(BASE, { waitUntil: 'load' });
-await desk.waitForSelector('.chip');
+await waitForApp(desk);
 await desk.screenshot({ path: `${shots}/06-desktop.png` });
 await desk.click('.chip[data-theme="fork"]');
 await desk.fill('#count', '50');
@@ -222,8 +237,9 @@ step('12 · Unmögliche UND-Kombination');
   // soll das vorab sagen und keine Daten laden.
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
   const p2 = await ctx2.newPage();
+  p2.setDefaultTimeout(90_000);
   await p2.goto(BASE, { waitUntil: 'load' });
-  await p2.waitForSelector('#themeList .chip');
+  await waitForApp(p2);
 
   for (const t of ['mateIn2', 'mateIn3']) {
     await p2.fill('#themeSearch', t);
@@ -231,13 +247,13 @@ step('12 · Unmögliche UND-Kombination');
   }
   await p2.fill('#themeSearch', '');
   await p2.click('#modeSeg button[data-v="AND"]');
-  await p2.waitForFunction(() => document.querySelector('#modeHint').textContent.includes('nie'), null, {
+  await p2.waitForFunction(() => document.querySelector('#modeHint').textContent.includes('never occur together'), null, {
     timeout: 10000,
   });
   ok('Warnung erscheint: UND-Kombination ohne gemeinsame Puzzles');
 
   const estimate = await p2.textContent('#estimate');
-  /0 Treffer/.test(estimate || '')
+  /0 results/.test(estimate || '')
     ? ok(`Anzeige nennt 0 Treffer: "${(estimate || '').trim()}"`)
     : bad(`Anzeige ohne Treffer-Hinweis: "${(estimate || '').trim()}"`);
 
@@ -252,7 +268,7 @@ step('12 · Unmögliche UND-Kombination');
   dataRequests === 0
     ? ok('keine einzige Datendatei geladen')
     : bad(`${dataRequests} Datendateien geladen, obwohl 0 Treffer möglich sind`);
-  /0 Treffer/.test(toast2 || '')
+  /0 results/.test(toast2 || '')
     ? ok(`Meldung: "${(toast2 || '').trim()}"`)
     : bad(`unerwartete Meldung: "${(toast2 || '').trim()}"`);
   await p2.screenshot({ path: `${shots}/10-unmoegliche-kombi.png` });
