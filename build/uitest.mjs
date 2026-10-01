@@ -216,7 +216,50 @@ const deskRows = await desk.locator('#resultList li').count();
 deskRows === 50 ? ok('Desktop: 50 Zeilen') : bad(`Desktop: ${deskRows} Zeilen`);
 await desk.screenshot({ path: `${shots}/07-desktop-ergebnis.png` });
 
-step('12 · Konsole');
+step('12 · Unmögliche UND-Kombination');
+{
+  // mateIn2 und mateIn3 kommen in den Daten nie gemeinsam vor. Die Website
+  // soll das vorab sagen und keine Daten laden.
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+  const p2 = await ctx2.newPage();
+  await p2.goto(BASE, { waitUntil: 'load' });
+  await p2.waitForSelector('#themeList .chip');
+
+  for (const t of ['mateIn2', 'mateIn3']) {
+    await p2.fill('#themeSearch', t);
+    await p2.locator(`#themeList .chip[data-theme="${t}"]`).click();
+  }
+  await p2.fill('#themeSearch', '');
+  await p2.click('#modeSeg button[data-v="AND"]');
+  await p2.waitForFunction(() => document.querySelector('#modeHint').textContent.includes('nie'), null, {
+    timeout: 10000,
+  });
+  ok('Warnung erscheint: UND-Kombination ohne gemeinsame Puzzles');
+
+  const estimate = await p2.textContent('#estimate');
+  /0 Treffer/.test(estimate || '')
+    ? ok(`Anzeige nennt 0 Treffer: "${(estimate || '').trim()}"`)
+    : bad(`Anzeige ohne Treffer-Hinweis: "${(estimate || '').trim()}"`);
+
+  let dataRequests = 0;
+  p2.on('request', (r) => {
+    if (r.url().includes('/data/')) dataRequests++;
+  });
+  await p2.click('#searchBtn');
+  await p2.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 20000 });
+  const toast2 = await p2.textContent('#toast');
+  await p2.waitForTimeout(300);
+  dataRequests === 0
+    ? ok('keine einzige Datendatei geladen')
+    : bad(`${dataRequests} Datendateien geladen, obwohl 0 Treffer möglich sind`);
+  /0 Treffer/.test(toast2 || '')
+    ? ok(`Meldung: "${(toast2 || '').trim()}"`)
+    : bad(`unerwartete Meldung: "${(toast2 || '').trim()}"`);
+  await p2.screenshot({ path: `${shots}/10-unmoegliche-kombi.png` });
+  await ctx2.close();
+}
+
+step('13 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 

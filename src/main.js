@@ -8,7 +8,7 @@
  */
 
 import { GROUPS, label, groupOf } from './themes.js';
-import { loadManifest, runQuery, estimateBytes } from './reader.js';
+import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, estimateRaw } from './reader.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'lpf.lastSearch.v1';
@@ -102,6 +102,19 @@ function toast(text) {
 
 // ---------------------------------------------------------------- Start
 
+/**
+ * Der Service Worker legt index.html in den Browser-Cache, damit der zweite
+ * Aufruf ohne Netz kommt. Fehler (z. B. bei file://) sind harmlos.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  try {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  } catch {
+    /* ignorieren */
+  }
+}
+
 init().catch((err) => {
   el.statusText.textContent = 'Fehler: ' + err.message;
   el.status.hidden = false;
@@ -109,6 +122,7 @@ init().catch((err) => {
 });
 
 async function init() {
+  registerServiceWorker();
   const manifest = await loadManifest();
   state.manifest = manifest;
   el.status.hidden = true;
@@ -247,10 +261,38 @@ el.form.addEventListener('submit', (e) => {
 function updateModeCard() {
   const many = state.selected.size > 1;
   el.modeCard.hidden = !many;
-  el.modeHint.textContent =
-    state.mode === 'OR'
-      ? 'Ein Puzzle zählt, wenn es mindestens eines der gewählten Themes hat.'
-      : 'Ein Puzzle zählt nur, wenn es alle gewählten Themes hat. Das lädt mehr Daten.';
+  if (!many) return;
+
+  if (state.mode === 'OR') {
+    el.modeHint.textContent =
+      'Ein Puzzle zählt, wenn es mindestens eines der gewählten Themes hat.';
+    return;
+  }
+  el.modeHint.textContent = 'Ein Puzzle zählt nur, wenn es alle gewählten Themes hat.';
+  el.modeHint.append(' ' + impossibleHint());
+}
+
+/**
+ * 532 von 2628 Theme-Paaren kommen in der Datenbank nie gemeinsam vor. Solche
+ * Kombinationen liefern immer 0 Treffer - das steht schon im Manifest und muss
+ * nicht erst durch Datenladen herausgefunden werden.
+ */
+function impossibleHint() {
+  const pair = impossiblePair();
+  if (!pair) return '';
+  return `Achtung: ${label(pair[0])} und ${label(pair[1])} kommen in den 6,1 Mio. Puzzles nie gleichzeitig vor – eine UND-Suche liefert dort nichts. Mit ODER geht es.`;
+}
+
+/** Das erste ausgewählte Paar, das nie gemeinsam vorkommt (oder null). */
+function impossiblePair() {
+  const list = [...state.selected];
+  if (list.length < 2 || !state.manifest) return null;
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      if (isImpossiblePair(state.manifest, list[i], list[j])) return [list[i], list[j]];
+    }
+  }
+  return null;
 }
 
 function update() {
@@ -265,10 +307,24 @@ function update() {
   if (state.order === 'range' && query.min > query.max) {
     el.estimate.textContent = 'Min darf nicht größer als Max sein';
   } else if (count && state.manifest) {
-    const bytes = estimateBytes(state.manifest, query);
-    el.estimate.textContent =
-      `Daten für diese Suche: rund ${fmtBytes(bytes)}` +
-      (state.mode === 'AND' && count > 1 ? ' (UND lädt alle betroffenen Buckets)' : '');
+    if (query.mode === 'AND' && impossiblePair()) {
+      el.estimate.textContent = 'Diese UND-Kombination gibt es in den Daten nicht – 0 Treffer';
+      el.estimate.classList.add('warn');
+      return;
+    }
+    el.estimate.classList.remove('warn');
+    if (query.mode === 'AND' && count > 1) {
+      // UND liest von oben her und hört auf, sobald genug Treffer da sind.
+      // Wie viel das wirklich wird, hängt von der Kombination ab - deshalb
+      // die Obergrenze nennen statt eine Zahl zu behaupten, die nicht stimmt.
+      const max = estimateAll(state.manifest, query);
+      const min = estimateBytes(state.manifest, query);
+      el.estimate.textContent =
+        `UND liest beide Themes von oben her und stoppt bei ${query.count} Treffern: ` +
+        `mindestens ${fmtBytes(min)}, höchstens ${fmtBytes(max)}.`;
+    } else {
+      el.estimate.textContent = `Daten für diese Suche: rund ${fmtBytes(estimateAll(state.manifest, query))}`;
+    }
   } else {
     el.estimate.textContent = '';
   }
@@ -310,6 +366,31 @@ function clampInt(value, lo, hi, fallback) {
 
 // ---------------------------------------------------------------- Suche
 
+/**
+ * Wie viele Bytes wirklich über die Leitung gingen.
+ *
+ * Der Zähler in der Datenschicht zählt die entpackten Bytes - die sind gut vier
+ * Mal so groß und würden die Ladezeit schönrechnen. Die Resource-Timing-API
+ * kennt die echte Übertragungsgröße je Anfrage (inklusive Cache-Treffer, die 0
+ * zählen), deshalb wird für die Anzeige sie verwendet.
+ */
+let transferMark = 0;
+
+function markTransfers() {
+  performance.clearResourceTimings();
+  transferMark = performance.now();
+}
+
+function sumTransfers() {
+  let sum = 0;
+  for (const e of performance.getEntriesByType('resource')) {
+    if (e.startTime < transferMark) continue;
+    if (!e.name.includes('/data/')) continue;
+    sum += e.transferSize || e.encodedBodySize || 0;
+  }
+  return sum;
+}
+
 el.searchBtn.onclick = search;
 
 async function search() {
@@ -323,13 +404,14 @@ async function search() {
   el.loadCancel.onclick = () => controller.abort();
 
   const t0 = performance.now();
+  markTransfers();
   try {
-    const { items, bytes, cancelled } = await runQuery(state.manifest, query, {
+    const { items, bytes, wire, cancelled, impossible } = await runQuery(state.manifest, query, {
       signal: controller.signal,
       onBytes: (b) => {
-        const estimate = Math.max(estimateBytes(state.manifest, query), 1);
-        el.loadBar.style.width = `${Math.min(100, (b / estimate) * 100)}%`;
-        el.loadingText.textContent = `${fmtBytes(b)} geladen …`;
+        const target = Math.max(estimateRaw(state.manifest, query), 1);
+        el.loadBar.style.width = `${Math.min(100, (b / target) * 100)}%`;
+        el.loadingText.textContent = `${fmtBytes(b)} entpackt …`;
       },
     });
 
@@ -338,12 +420,30 @@ async function search() {
       return;
     }
 
+    if (impossible) {
+      el.loading.hidden = true;
+      const pair = impossiblePair();
+      toast(
+        pair
+          ? `${label(pair[0])} und ${label(pair[1])} kommen nie gemeinsam vor – 0 Treffer`
+          : 'Diese UND-Kombination liefert 0 Treffer',
+      );
+      return;
+    }
+
     el.loadingText.textContent = 'Ergebnis wird aufgebaut …';
     state.results = items;
     saveLastSearch(query, items);
     renderResults();
     show('results');
-    toast(`${items.length} Puzzles in ${Math.round(performance.now() - t0)} ms · ${fmtBytes(bytes)} geladen`);
+    const ms = Math.round(performance.now() - t0);
+    // sumTransfers() ist exakt, aber nicht überall verfügbar (z. B. wenn die
+    // Zeitmessung des Browsers keine Größen kennt) - dann content-length.
+    const over = sumTransfers() || wire;
+    toast(
+      `${items.length} Puzzles in ${ms} ms · ${fmtBytes(over)} übertragen` +
+        (bytes > over * 2 ? ` (${fmtBytes(bytes)} entpackt)` : ''),
+    );
   } catch (err) {
     console.error(err);
     toast('Fehler bei der Suche: ' + err.message);

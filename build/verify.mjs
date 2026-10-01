@@ -213,7 +213,7 @@ process.env.LPF_BASE = `http://127.0.0.1:${port}/`;
 console.log(`Testserver: ${process.env.LPF_BASE}`);
 
 // reader.js liest LPF_BASE beim Import - muss also danach passieren.
-const { runQuery } = await import('../src/reader.js');
+const { runQuery, isImpossiblePair } = await import('../src/reader.js');
 const manifest = await (await fetch(`${process.env.LPF_BASE}data/manifest.json`)).json();
 
 const fixedScript = path.join(repo, 'puzzle-finder.sh');
@@ -224,6 +224,58 @@ let exactPass = 0;
 let oldChecked = 0;
 let oldDiffers = 0;
 const oldBroken = [];
+
+// --- Leere Theme-Paare pruefen ---------------------------------------------
+// Wenn die Bitmatrix im Manifest falsch waere, wuerde die Website leere
+// Ergebnisse zeigen, wo es Treffer gibt. Geprueft wird gegen den Original-Index
+// des Bash-Skripts (.lichess-puzzle-index), der unabhaengig davon gebaut wurde.
+
+function idSet(theme) {
+  const file = path.join(workdir, '.lichess-puzzle-index', `${theme}.tsv`);
+  const out = new Set();
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (!line) continue;
+    out.add(line.slice(line.indexOf('\t') + 1));
+  }
+  return out;
+}
+
+{
+  const mateN = ['mateIn1', 'mateIn2', 'mateIn3', 'mateIn4', 'mateIn5'];
+  const pairs = [];
+  for (let i = 0; i < mateN.length; i++) {
+    for (let j = i + 1; j < mateN.length; j++) pairs.push([mateN[i], mateN[j]]);
+  }
+  pairs.push(['backRankMate', 'sacrifice'], ['fork', 'skewer'], ['mateIn3', 'attraction']);
+  pairs.push(['rookEndgame', 'endgame'], ['defensiveMove', 'fork']);
+
+  let bad = 0;
+  for (const [a, b] of pairs) {
+    if (!manifest.themes[a] || !manifest.themes[b]) continue;
+    const setA = idSet(a);
+    const setB = idSet(b);
+    let shared = false;
+    for (const id of setB) {
+      if (setA.has(id)) {
+        shared = true;
+        break;
+      }
+    }
+    const empty = !shared;
+    const flagged = isImpossiblePair(manifest, a, b);
+    if (flagged !== empty) {
+      bad++;
+      failures++;
+      console.log(
+        `  FEHLER ${a} ∩ ${b}: im Original-Index ${shared ? 'gemeinsame Puzzles' : 'keine gemeinsamen Puzzles'}` +
+          `, Matrix sagt ${flagged ? 'leer' : 'möglich'}`,
+      );
+    }
+  }
+  console.log(
+    `  ok    ${pairs.length} Theme-Paare gegen den Original-Index geprüft, ${bad} falsch`,
+  );
+}
 
 for (const sc of scenarios) {
   const t0 = Date.now();

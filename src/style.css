@@ -386,6 +386,12 @@ button.big {
   min-height: 1.1em;
 }
 
+/* Unmögliche Kombinationen deutlich, aber nicht panisch. */
+.estimate.warn,
+.hint.warn {
+  color: var(--accent);
+}
+
 /* ------------------------------ Ergebnisse ----------------------------- */
 
 .results {
