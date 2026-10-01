@@ -198,8 +198,10 @@ h2 {
   margin-bottom: 0.8rem;
 }
 
+/* Drei Knopfzeilen: 100px Grundbreite, damit sie auf einem 390px-Handy in
+   eine Zeile passen statt umzubrechen. */
 .row > button {
-  flex: 1 1 140px;
+  flex: 1 1 100px;
 }
 
 .two {

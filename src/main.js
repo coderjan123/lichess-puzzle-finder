@@ -48,6 +48,7 @@ const el = {
   resultList: $('resultList'),
   playFirst: $('playFirst'),
   copyIds: $('copyIds'),
+  copyLink: $('copyLink'),
   snapshotNote: $('snapshotNote'),
   loading: $('loading'),
   loadingText: $('loadingText'),
@@ -66,29 +67,128 @@ const state = {
   abort: null,
 };
 
-// ---------------------------------------------------------------- Router
+// -------------------------------------------------- Router und Suchzustand
 
 const views = { home: $('viewHome'), results: $('viewResults') };
 let current = 'home';
 
-function show(name, push = true) {
+function setView(name) {
   current = name;
   for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
   el.back.hidden = name === 'home';
   el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Results';
-  if (push) history.pushState({ view: name }, '', '#' + name);
   window.scrollTo(0, 0);
 }
 
+/**
+ * Zeigt eine Ansicht und schreibt den Zustand in die Adresse.
+ *
+ * push=false ersetzt nur den aktuellen Eintrag. Sonst erzeugt jedes Tippen in
+ * einem Zahlenfeld einen Zurück-Schritt, und der Knopf wird unbrauchbar.
+ */
+function show(name, { push = true } = {}) {
+  setView(name);
+  writeUrl(push);
+}
+
 el.back.onclick = () => history.back();
-window.addEventListener('popstate', (e) => {
-  const name = e.state?.view || 'home';
-  if (name === current) return;
-  current = name;
-  for (const [key, node] of Object.entries(views)) node.hidden = key !== name;
-  el.back.hidden = name === 'home';
-  el.title.textContent = name === 'home' ? 'Lichess Puzzle Finder' : 'Results';
+
+window.addEventListener('popstate', () => {
+  const parsed = readUrl();
+  // Reihenfolge ist wichtig: erst die Ansicht setzen, dann den Zustand. Wird
+  // umgekehrt, schreibt applyQuery -> update -> writeUrl die Adresse mit dem
+  // alten view und der Verlaufseintrag zeigt plötzlich etwas anderes an, als
+  // was gerade angezeigt wird.
+  setView(parsed.view);
+  if (parsed.query) applyQuery(parsed.query);
 });
+
+/**
+ * Der ganze Zustand steht in der Adresse:
+ *
+ *   #/results?t=mateIn3,attraction&m=AND&o=hardest&n=100&r=1800-2200
+ *
+ * Damit lässt sich eine Liste bookmarken und weitergeben, und der Zurück-Knopf
+ * liefert die Auswahl wieder statt nur die Ansicht. Alles im Hash, damit kein
+ * Server etwas auswerten muss - auch nicht in einem Unterordner.
+ */
+function queryToHash(query) {
+  // Bewusst von Hand gebaut: URLSearchParams schreibt das Komma als %2C und die
+  // Adresse wird unlesbar. Ein Komma ist in einer Query ausdruecklich erlaubt.
+  const parts = [`t=${query.themes.map(encodeURIComponent).join(',')}`];
+  if (query.themes.length > 1) parts.push(`m=${query.mode}`);
+  parts.push(`o=${query.order}`);
+  parts.push(`n=${query.count}`);
+  if (query.order === 'range') parts.push(`r=${query.min}-${query.max}`);
+  return parts.join('&');
+}
+
+/**
+ * Liest die Adresse und prüft jeden Wert. Unbekanntes wird verworfen, nicht
+ * geraten: ein Link von Hand, aus einer alten Version oder von einem Theme, das
+ * es nicht mehr gibt, darf die Seite nicht zerschießen.
+ */
+function readUrl() {
+  const raw = location.hash.replace(/^#\/?/, '');
+  const cut = raw.indexOf('?');
+  const view = (cut === -1 ? raw : raw.slice(0, cut)) === 'results' ? 'results' : 'home';
+  const p = new URLSearchParams(cut === -1 ? '' : raw.slice(cut + 1));
+
+  const themes = [];
+  for (const id of (p.get('t') || '').split(',')) {
+    const theme = id.trim();
+    if (theme && state.manifest?.themes[theme] && !themes.includes(theme)) themes.push(theme);
+  }
+  if (!themes.length) return { view: 'home', query: null };
+
+  const order = ['hardest', 'easiest', 'range'].includes(p.get('o')) ? p.get('o') : 'hardest';
+  let min = 0;
+  let max = 9999;
+  if (order === 'range') {
+    const m = /^(\d{1,4})-(\d{1,4})$/.exec(p.get('r') || '');
+    if (m) {
+      min = clampInt(m[1], 0, 4000, 0);
+      max = clampInt(m[2], 0, 4000, 9999);
+      if (min > max) [min, max] = [max, min];
+    }
+  }
+  return {
+    view,
+    query: {
+      themes,
+      mode: p.get('m') === 'AND' ? 'AND' : 'OR',
+      order,
+      min,
+      max,
+      count: clampInt(p.get('n'), 1, 5000, 100),
+    },
+  };
+}
+
+/** Schreibt Ansicht und Zustand in die Adresse. */
+function writeUrl(push) {
+  const query = buildQuery();
+  const params = query.themes.length ? '?' + queryToHash(query) : '';
+  const hash = `#/${current}${params}`;
+  const entry = { view: current };
+  if (push) history.pushState(entry, '', hash);
+  else history.replaceState(entry, '', hash);
+}
+
+/** Setzt Auswahl und Formular auf einen Zustand aus der Adresse. */
+function applyQuery(query) {
+  state.selected = new Set(query.themes);
+  state.mode = query.themes.length > 1 ? query.mode : 'OR';
+  state.order = query.order;
+  el.count.value = String(query.count);
+  el.minRating.value = String(query.min);
+  el.maxRating.value = String(query.max);
+  setSegment(el.modeSeg, state.mode);
+  setSegment(el.orderSeg, state.order);
+  el.rangeBox.hidden = state.order !== 'range';
+  renderThemes();
+  update();
+}
 
 // ---------------------------------------------------------------- Toast
 
@@ -134,8 +234,17 @@ async function init() {
   el.topMeta.textContent = `${compact.format(manifest.puzzles)} Puzzles · ${Object.keys(manifest.themes).length} Themes`;
   renderThemes();
   buildPresets();
-  offerLastSearch();
-  update();
+
+  // Zustand aus der Adresse übernehmen. Ein geteilter Link auf die Ergebnisliste
+  // soll die Liste zeigen, ohne dass noch einmal geklickt werden muss.
+  const parsed = readUrl();
+  if (parsed.query) {
+    applyQuery(parsed.query);
+  } else {
+    offerLastSearch();
+    update();
+  }
+  if (parsed.view === 'results' && parsed.query) search({ push: false });
 }
 
 // ------------------------------------------------------ Theme-Auswahl
@@ -200,12 +309,17 @@ el.clearThemes.onclick = () => {
 function segmented(node, key, onPick) {
   node.querySelectorAll('button').forEach((b) => {
     b.onclick = () => {
-      node.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      setSegment(node, b.dataset.v);
       state[key] = b.dataset.v;
       onPick?.();
       update();
     };
   });
+}
+
+/** Markiert den passenden Knopf - auch wenn der Zustand aus der Adresse kam. */
+function setSegment(node, value) {
+  node.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.v === value));
 }
 
 segmented(el.modeSeg, 'mode', updateModeCard);
@@ -327,6 +441,10 @@ function update() {
   } else {
     el.estimate.textContent = '';
   }
+
+  // Jede Änderung sofort in der Adresse festhalten. replaceState statt
+  // pushState: die Auswahl ist kein Schritt in der Historie, nur die Suche.
+  writeUrl(false);
 }
 
 function fmtBytes(n) {
@@ -392,7 +510,9 @@ function sumTransfers() {
 
 el.searchBtn.onclick = search;
 
-async function search() {
+/** @param push  false beim Aufruf aus einer geteilten Adresse: da darf die
+ *  Suche keinen zusätzlichen Historieneintrag anlegen. */
+async function search({ push = true } = {}) {
   const query = buildQuery();
   if (!query.themes.length) return;
 
@@ -434,7 +554,7 @@ async function search() {
     state.results = items;
     saveLastSearch(query, items);
     renderResults();
-    show('results');
+    show('results', { push });
     const ms = Math.round(performance.now() - t0);
     // sumTransfers() ist exakt, aber nicht überall verfügbar (z. B. wenn die
     // Zeitmessung des Browsers keine Größen kennt) - dann content-length.
@@ -507,22 +627,28 @@ function renderResults() {
 
 el.playFirst.onclick = () => state.results.length && window.open(puzzleUrl(state.results[0].id), '_blank', 'noopener');
 
-el.copyIds.onclick = async () => {
-  const text = state.results.map((x) => x.id).join('\n');
+/** Kopiert in die Zwischenablage, mit Rückfall für Browser ohne API. */
+async function copyText(text, message) {
   try {
     await navigator.clipboard.writeText(text);
-    toast(`Copied ${state.results.length} IDs`);
   } catch {
-    // Fallback für Browser ohne Clipboard-API
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.append(ta);
     ta.select();
     document.execCommand('copy');
     ta.remove();
-    toast(`Copied ${state.results.length} IDs`);
   }
-};
+  toast(message);
+}
+
+el.copyIds.onclick = () =>
+  copyText(
+    state.results.map((x) => x.id).join('\n'),
+    `Copied ${state.results.length} IDs`,
+  );
+
+el.copyLink.onclick = () => copyText(location.href, 'Link copied');
 
 // ------------------------------------------------- Letzte Suche merken
 

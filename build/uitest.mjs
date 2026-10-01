@@ -193,14 +193,26 @@ const easyList = await search(page, { theme: 'mateIn2', count: 20, order: 'easie
 const asc = easyList.every((x, i) => i === 0 || x.rating >= easyList[i - 1].rating);
 asc && easyList.length === 20 ? ok('einfachste zuerst liefert aufsteigende Ratings') : bad('Reihenfolge falsch');
 
-step('9 · Reload: letzte Suche');
+step('9 · Reload: aus der Adresse und aus dem Speicher');
+// Nach einer Suche steht die Auswahl in der Adresse. Ein Reload fuehrt deshalb
+// direkt zur Liste, ohne weiteren Klick.
 await page.reload({ waitUntil: 'load' });
+await page.waitForSelector('#viewResults:not([hidden])');
+const perUrl = await page.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()).join(','));
+perUrl === easyList.map((x) => x.id).join(',')
+  ? ok(`Reload aus der Adresse zeigt dieselbe Liste (${easyList.length} IDs)`)
+  : bad('Reload aus der Adresse zeigt eine andere Liste');
+
+// Ohne Zustand in der Adresse bleibt die zuletzt gesuchte Liste im Speicher
+// und wird angeboten.
+await page.goto(BASE, { waitUntil: 'load' });
+await waitForApp(page);
 await page.waitForSelector('#resumeCard:not([hidden])', { timeout: 30000 });
 ok(`Angeboten: ${(await page.locator('#resumeTitle').textContent()).trim()} · ${(await page.locator('#resumeInfo').textContent()).trim()}`);
 await page.click('#resumeBtn');
 await page.waitForSelector('#viewResults:not([hidden])');
 const resumed = await page.$$eval('#resultList li', (n) => n.length);
-resumed === easyList.length ? ok(`Liste wiederhergestellt (${resumed} Zeilen)`) : bad(`nur ${resumed} Zeilen`);
+resumed === easyList.length ? ok(`Liste aus dem Speicher wiederhergestellt (${resumed} Zeilen)`) : bad(`nur ${resumed} Zeilen`);
 await page.click('#resumeDrop').catch(() => {});
 
 step('10 · Hinweis bei file://');
@@ -275,7 +287,142 @@ step('12 · Unmögliche UND-Kombination');
   await ctx2.close();
 }
 
-step('13 · Konsole');
+step('13 · Suchzustand in der Adresse');
+{
+  const ictx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const ip = await ictx.newPage();
+  ip.setDefaultTimeout(90_000);
+  const consoleBefore = consoleErrors.length;
+
+  await ip.goto(BASE, { waitUntil: 'load' });
+  await waitForApp(ip);
+
+  // Auswahl über die Oberfläche zusammenstellen
+  for (const t of ['mateIn3', 'attraction']) {
+    await ip.fill('#themeSearch', t);
+    await ip.locator(`#themeList .chip[data-theme="${t}"]`).click();
+  }
+  await ip.fill('#themeSearch', '');
+  await ip.click('#modeSeg button[data-v="AND"]');
+  await ip.fill('#count', '25');
+
+  const hash = await ip.evaluate(() => location.hash);
+  const hatAll = /t=mateIn3,attraction/.test(hash) && /m=AND/.test(hash) && /n=25/.test(hash);
+  hatAll
+    ? ok(`Adresse enthält den Zustand: ${hash}`)
+    : bad(`Adresse unvollständig: ${hash}`);
+
+  // Reload: das Formular muss wiederhergestellt sein
+  await ip.reload({ waitUntil: 'load' });
+  await waitForApp(ip);
+  const restored = await ip.evaluate(() => ({
+    themes: [...document.querySelectorAll('#themeList .chip.on')].map((c) => c.dataset.theme).join(','),
+    mode: document.querySelector('#modeSeg button.on')?.dataset.v,
+    count: document.getElementById('count').value,
+  }));
+  restored.themes === 'mateIn3,attraction' && restored.mode === 'AND' && restored.count === '25'
+    ? ok(`Reload stellt wieder her: ${restored.themes} · ${restored.mode} · ${restored.count}`)
+    : bad(`Reload unvollständig: ${JSON.stringify(restored)}`);
+
+  // Suchen und die Ergebnis-Adresse prüfen
+  await ip.click('#searchBtn');
+  await ip.waitForSelector('#viewResults:not([hidden])');
+  const idsLocal = await ip.$$eval('#resultList .id', (ns) => ns.map((n) => n.textContent.trim()));
+  const erwartet = (
+    await runQuery(
+      manifest,
+      { themes: ['mateIn3', 'attraction'], mode: 'AND', order: 'hardest', min: 0, max: 9999, count: 25 },
+      {},
+    )
+  ).items.map((x) => x.id);
+  idsLocal.join() === erwartet.join()
+    ? ok(`Ergebnisliste stimmt mit dem Daten-Reader überein (${idsLocal.length} IDs)`)
+    : bad(`Ergebnisliste weicht ab: ${idsLocal.slice(0, 3)} …`);
+  /#\/results\?t=mateIn3,attraction/.test(await ip.evaluate(() => location.hash))
+    ? ok('Ergebnis-Adresse trägt denselben Zustand')
+    : bad(`Ergebnis-Adresse: ${await ip.evaluate(() => location.hash)}`);
+
+  // Kopierknopf
+  await ip.click('#copyLink');
+  await ip.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 20000 });
+  const toastLink = ((await ip.textContent('#toast')) || '').trim();
+  /Link copied/.test(toastLink)
+    ? ok(`Meldung: "${toastLink}"`)
+    : bad(`unerwartete Meldung: "${toastLink}"`);
+
+  // Zurück / vorwärts
+  await ip.click('#backBtn');
+  await ip.waitForSelector('#viewHome:not([hidden])');
+  const backThemes = await ip.evaluate(() =>
+    [...document.querySelectorAll('#themeList .chip.on')].map((c) => c.dataset.theme).join(','),
+  );
+  backThemes === 'mateIn3,attraction'
+    ? ok('Zurück: Auswahl bleibt erhalten')
+    : bad(`Zurück: Auswahl verloren (${backThemes || 'leer'})`);
+  await ip.goForward();
+  await ip.waitForSelector('#viewResults:not([hidden])');
+  ok(`Adresse nach "vorwärts": ${await ip.evaluate(() => location.hash)}`);
+  (await ip.locator('#resultList li').count()) === 25
+    ? ok('Vorwärts: Liste wieder da')
+    : bad('Vorwärts: Liste fehlt');
+
+  const shareUrl = await ip.evaluate(() => location.href);
+
+  // Geteilter Link in einem frischen Fenster: Liste ohne Klick
+  const ip2 = await ictx.newPage();
+  ip2.setDefaultTimeout(90_000);
+  await ip2.goto(shareUrl, { waitUntil: 'load' });
+  try {
+    await ip2.waitForSelector('#viewResults:not([hidden])', { timeout: 60_000 });
+    const idsShared = await ip2.$$eval('#resultList .id', (ns) => ns.map((n) => n.textContent.trim()));
+    idsShared.join() === erwartet.join()
+      ? ok(`Geteilter Link zeigt dieselbe Liste ohne Klick (${idsShared.length} IDs)`)
+      : bad(`Geteilter Link zeigt eine andere Liste: ${idsShared.slice(0, 3).join(' ')} …`);
+  } catch {
+    // Zustand ausgeben, statt nur "fehlt" zu melden - sonst ist die Ursache
+    // beim nächsten Lauf nicht sichtbar.
+    const zustand = await ip2
+      .evaluate(() => ({
+        hash: location.hash,
+        ergebnisse: !document.getElementById('viewResults').hidden,
+        zeilen: document.querySelectorAll('#resultList li').length,
+        chips: document.querySelectorAll('#themeList .chip').length,
+        busy: !document.getElementById('loading').hidden,
+      }))
+      .catch(() => ({ fehler: 'Seite nicht erreichbar' }));
+    bad(`Geteilter Link zeigt die Liste nicht von selbst: ${JSON.stringify(zustand)}\n     gelesene Adresse: ${shareUrl}`);
+  }
+  await ip2.close();
+
+  // Absichtlich kaputte Adresse: darf nichts zerschießen
+  const ip3 = await ictx.newPage();
+  ip3.setDefaultTimeout(90_000);
+  await ip3.goto(BASE + '#/home?t=gibtsnicht,mateIn3&m=QUATSCH&o=range&r=9999-100&n=abc', {
+    waitUntil: 'load',
+  });
+  await waitForApp(ip3);
+  const kaputt = await ip3.evaluate(() => ({
+    themes: [...document.querySelectorAll('#themeList .chip.on')].map((c) => c.dataset.theme).join(','),
+    mode: document.querySelector('#modeSeg button.on')?.dataset.v,
+    order: document.querySelector('#orderSeg button.on')?.dataset.v,
+    count: document.getElementById('count').value,
+    min: document.getElementById('minRating').value,
+    max: document.getElementById('maxRating').value,
+    bereit: !document.getElementById('statusCard').hidden === false,
+  }));
+  kaputt.themes === 'mateIn3' && kaputt.mode === 'OR' && kaputt.order === 'range' && kaputt.count === '100'
+    ? ok(`Kaputte Adresse landet in Standardwerten: ${kaputt.themes} · ${kaputt.mode} · ${kaputt.order} · ${kaputt.count} · ${kaputt.min}-${kaputt.max}`)
+    : bad(`Kaputte Adresse falsch aufgelöst: ${JSON.stringify(kaputt)}`);
+  await ip3.close();
+
+  await ictx.close();
+  const neuErrors = consoleErrors.length - consoleBefore;
+  neuErrors === 0
+    ? ok('keine Konsolenfehler in der Adressen-Prüfung')
+    : bad(`${neuErrors} Konsolenfehler: ${consoleErrors.slice(consoleBefore, consoleBefore + 3).join(' | ')}`);
+}
+
+step('14 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 
