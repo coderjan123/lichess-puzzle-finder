@@ -8,16 +8,18 @@
     "build": "node build/bundle.mjs",
     "data": "python3 build/build_index.py /home/jan/lichess_db_puzzle.csv docs/data",
     "serve": "node build/serve.mjs 8123 --host 0.0.0.0",
-    "test": "node build/verify.mjs && node build/uitest.mjs",
+    "test": "node build/qrtest.mjs && node build/verify.mjs && node build/uitest.mjs",
     "test:data": "node build/verify.mjs",
     "test:ui": "node build/uitest.mjs",
-    "test:speed": "node build/speedtest.mjs --profile langsam --szenario and"
+    "test:speed": "node build/speedtest.mjs --profile langsam --szenario and",
+    "test:qr": "node build/qrtest.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "jsqr": "^1.4.0",
     "playwright": "^1.63.0"
   }
 }

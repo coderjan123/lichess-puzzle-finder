@@ -8,6 +8,7 @@
  */
 
 import { GROUPS, label, groupOf, SEARCH_DE, GROUP_SEARCH_DE } from './themes.js';
+import { qrSvg } from './qr.js';
 import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, estimateRaw, decodeSolv } from './reader.js';
 
 const $ = (id) => document.getElementById(id);
@@ -39,6 +40,12 @@ const el = {
   solvSeg: $('solvSeg'),
   solvNote: $('solvNote'),
   mateHint: $('mateHint'),
+  qrBtn: $('qrBtn'),
+  qrOverlay: $('qrOverlay'),
+  qrCode: $('qrCode'),
+  qrUrl: $('qrUrl'),
+  qrCopy: $('qrCopy'),
+  qrClose: $('qrClose'),
   rangeBox: $('rangeBox'),
   minRating: $('minRating'),
   maxRating: $('maxRating'),
@@ -76,6 +83,54 @@ const state = {
   abort: null,
   hideTicked: false,
 };
+
+// ------------------------------------------------------------- QR-Ansicht
+
+/**
+ * QR-Code der aktuellen Adresse.
+ *
+ * Der Code wird beim Oeffnen erzeugt, nicht beim Laden - so zeigt er immer
+ * genau das, was gerade offen ist: die Auswahl auf der Startseite, die
+ * Ergebnisliste, die man sich gerade angesehen hat. Gedacht ist das fuer den
+ * Weg vom Handy auf den Rechner: Adresse am Handy als Code, am Rechner
+ * scannen, und dieselbe Liste steht da.
+ *
+ * Der Code entsteht im Browser (src/qr.js). Bewusst ohne Dienst im Internet:
+ * die Seite laedt sonst nichts nach, und jeder Code-Aufruf waere ein Kontakt
+ * nach draussen, den es sonst nicht gaebe.
+ */
+function qrOeffnen() {
+  const adresse = location.href;
+  const svg = qrSvg(adresse);
+  if (!svg) {
+    toast('Address is too long for a QR code');
+    return;
+  }
+  el.qrCode.innerHTML = svg;
+  el.qrUrl.textContent = adresse;
+  el.qrOverlay.hidden = false;
+  el.qrClose.focus();
+}
+
+function qrSchliessen() {
+  el.qrOverlay.hidden = true;
+  el.qrCode.replaceChildren();
+  el.qrBtn.focus();
+}
+
+el.qrBtn.onclick = qrOeffnen;
+el.qrClose.onclick = qrSchliessen;
+el.qrOverlay.addEventListener('click', (e) => {
+  if (e.target === el.qrOverlay) qrSchliessen();
+});
+el.qrCopy.onclick = () => copyText(location.href, 'Address copied');
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !el.qrOverlay.hidden) qrSchliessen();
+});
+
+// Bei file:// zeigt der QR-Code auf einen Dateipfad, den ein anderes Geraet
+// nicht oeffnen kann. Dann lieber gar nicht anbieten.
+if (location.protocol === 'file:') el.qrBtn.hidden = true;
 
 // -------------------------------------------------- Router und Suchzustand
 

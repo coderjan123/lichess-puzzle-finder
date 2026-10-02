@@ -655,7 +655,114 @@ step('16 · Deutsche Suchbegriffe und Mate-Hinweis');
   await dctx.close();
 }
 
-step('17 · Konsole');
+step('17 · QR-Code der Adresse');
+{
+  const qctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const qp = await qctx.newPage();
+  qp.setDefaultTimeout(90_000);
+  await qp.goto(BASE, { waitUntil: 'load' });
+  await waitForApp(qp);
+
+  // Der Decoder wird nur fuer diesen Test in die Seite geladen - die Website
+  // selbst braucht ihn nicht.
+  await qp.addScriptTag({ path: path.join(repo, 'node_modules', 'jsqr', 'dist', 'jsQR.js') });
+
+  const liesCode = () =>
+    qp.evaluate(async () => {
+      const svg = document.querySelector('#qrCode svg');
+      if (!svg) return { fehler: 'kein SVG' };
+      const vb = svg.viewBox.baseVal;
+      const rand = 4; // ruhrand, siehe qrSvg()
+      // Kantenlaenge aus dem Pfad ableiten: groesster Modulindex + rand*2
+      const pfad = svg.querySelector('path').getAttribute('d');
+      const teile = pfad.match(/M(-?[\d.]+) (-?[\d.]+)h1v1h-1z/g) || [];
+      const module = new Set();
+      for (const t of teile) {
+        const m = /M(-?[\d.]+) (-?[\d.]+)/.exec(t);
+        module.add(`${parseFloat(m[1]) - rand},${parseFloat(m[2]) - rand}`);
+      }
+      // Kantenlaenge direkt aus der ViewBox: das ist die Modulzahl plus der
+      // Ruhezone an beiden Seiten.
+      const size = Math.round(vb.width) - rand * 2;
+      const skala = 6;
+      const kanten = (size + rand * 2) * skala;
+      const canvas = document.createElement('canvas');
+      canvas.width = kanten;
+      canvas.height = kanten;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, kanten, kanten);
+      ctx.fillStyle = '#000';
+      for (const t of teile) {
+        const m = /M(-?[\d.]+) (-?[\d.]+)/.exec(t);
+        const x = (parseFloat(m[1])) * skala;
+        const y = (parseFloat(m[2])) * skala;
+        ctx.fillRect(x, y, skala, skala);
+      }
+      const bild = ctx.getImageData(0, 0, kanten, kanten);
+      const treffer = window.jsQR(bild.data, kanten, kanten);
+      return {
+        groesse: size,
+        module: module.size,
+        erwartet: size * size,
+        gelesen: treffer ? treffer.data : null,
+        jetzt: location.href,
+        anzeige: document.getElementById('qrUrl').textContent,
+      };
+    });
+
+  (await qp.locator('#qrBtn').isVisible())
+    ? ok('QR-Knopf oben rechts sichtbar')
+    : bad('QR-Knopf fehlt');
+  const box = await qp.locator('#qrBtn').boundingBox();
+  box && box.width >= 40 && box.height >= 40
+    ? ok(`Tippfläche ${Math.round(box.width)}×${Math.round(box.height)} px`)
+    : bad(`Tippfläche zu klein: ${JSON.stringify(box)}`);
+
+  await qp.click('#qrBtn');
+  await qp.waitForSelector('#qrOverlay:not([hidden])');
+  await qp.waitForTimeout(150);
+  await qp.screenshot({ path: `${shots}/12-qr-start.png` });
+
+  let r = await liesCode();
+  r.gelesen === r.jetzt
+    ? ok(`Code wird gelesen und ergibt genau die Adresse (Version ${r.groesse}x${r.groesse}, ${r.module} von ${r.erwartet} Modulen dunkel)`)
+    : bad(`Code ergibt "${r.gelesen}" statt "${r.jetzt}"`);
+  r.anzeige === r.jetzt
+    ? ok('Adresse steht als Text daneben')
+    : bad(`Text daneben weicht ab: "${r.anzeige}"`);
+  r.module < r.erwartet
+    ? ok('Finder-, Zeit- und Ausrichtungsmuster vorhanden (nicht alle Module dunkel)')
+    : bad('verdächtig: jedes zweite Modul ist dunkel');
+
+  await qp.keyboard.press('Escape');
+  await qp.waitForSelector('#qrOverlay', { state: 'hidden' });
+  ok('Escape schließt');
+
+  // Auf der Ergebnisliste muss der Code die Liste zeigen, nicht die Startseite.
+  await qp.fill('#themeSearch', 'mateIn3');
+  await qp.locator('#themeList .chip[data-theme="mateIn3"]').click();
+  await qp.fill('#themeSearch', '');
+  await qp.fill('#count', '42');
+  await qp.click('#searchBtn');
+  await qp.waitForSelector('#viewResults:not([hidden])');
+  await qp.click('#qrBtn');
+  await qp.waitForSelector('#qrOverlay:not([hidden])');
+  await qp.waitForTimeout(150);
+  await qp.screenshot({ path: `${shots}/13-qr-ergebnis.png` });
+
+  r = await liesCode();
+  r.gelesen === r.jetzt && /#\/results\?t=mateIn3/.test(r.gelesen || '')
+    ? ok(`Code zeigt die Ergebnisliste: ${r.gelesen}`)
+    : bad(`Code zeigt "${r.gelesen}" statt der Ergebnisliste`);
+
+  await qp.mouse.click(4, 4);
+  await qp.waitForSelector('#qrOverlay', { state: 'hidden' });
+  ok('Klick daneben schließt');
+  await qctx.close();
+}
+
+step('18 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 

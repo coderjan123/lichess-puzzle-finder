@@ -19,6 +19,23 @@
       <button id="backBtn" class="icon-btn" type="button" aria-label="Back" hidden>‹</button>
       <h1 id="viewTitle">Lichess Puzzle Finder</h1>
       <span id="topMeta" class="topmeta"></span>
+      <button
+        id="qrBtn"
+        class="qr-btn"
+        type="button"
+        aria-label="QR code of this page"
+        title="Show this page as a QR code"
+      >
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" focusable="false">
+          <rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2" />
+          <rect x="14" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2" />
+          <rect x="2" y="14" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2" />
+          <rect x="14" y="14" width="3" height="3" fill="currentColor" />
+          <rect x="19" y="14" width="3" height="3" fill="currentColor" />
+          <rect x="14" y="19" width="3" height="3" fill="currentColor" />
+          <rect x="19" y="19" width="3" height="3" fill="currentColor" />
+        </svg>
+      </button>
     </header>
 
     <main id="main">
@@ -162,6 +179,20 @@
     </div>
 
     <div class="toast" id="toast" hidden></div>
+
+    <!-- QR-Ansicht: der Code zeigt auf genau die Seite, die gerade offen ist.
+         Die Adresse wird beim Oeffnen neu gelesen, nicht beim Laden. -->
+    <div class="qr-overlay" id="qrOverlay" hidden>
+      <div class="qr-box" role="dialog" aria-modal="true" aria-label="QR code of this page">
+        <div id="qrCode" class="qr-code"></div>
+        <p class="qr-hint">Point a phone camera at this code to open the same page there.</p>
+        <p class="qr-url" id="qrUrl"></p>
+        <div class="qr-actions">
+          <button type="button" id="qrCopy">Copy address</button>
+          <button type="button" class="primary" id="qrClose">Close</button>
+        </div>
+      </div>
+    </div>
 
     <footer class="footer">
       Puzzle data from the

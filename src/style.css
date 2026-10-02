@@ -128,6 +128,107 @@ h2 {
   white-space: nowrap;
 }
 
+/* Kleiner QR-Knopf oben rechts. Bewusst leise: er ist eine Nebenmoeglichkeit,
+   kein zweiter Hauptweg. */
+.qr-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.qr-btn:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(5px);
+}
+
+.qr-overlay[hidden] {
+  display: none;
+}
+
+.qr-box {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+  max-width: min(30rem, 100%);
+  width: 100%;
+  text-align: center;
+}
+
+/* Der QR-Code selbst muss rein weiss sein, sonst scanst du ihn nicht. */
+.qr-code {
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.qr-code svg {
+  width: 100%;
+  max-width: 22rem;
+  height: auto;
+  display: block;
+}
+
+.qr-hint {
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+  margin: 0.8rem 0 0.3rem;
+}
+
+.qr-url {
+  font-size: 0.72rem;
+  color: var(--fg-dim);
+  word-break: break-all;
+  margin: 0 0 0.9rem;
+  line-height: 1.4;
+}
+
+.qr-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.qr-actions button {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.qr-actions button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .topmeta {
   color: var(--fg-dim);
   font-size: 0.8rem;
