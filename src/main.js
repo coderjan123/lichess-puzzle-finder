@@ -8,7 +8,7 @@
  */
 
 import { GROUPS, label, groupOf } from './themes.js';
-import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, estimateRaw } from './reader.js';
+import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, estimateRaw, decodeSolv } from './reader.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'lpf.lastSearch.v1';
@@ -36,6 +36,8 @@ const el = {
   modeSeg: $('modeSeg'),
   modeHint: $('modeHint'),
   orderSeg: $('orderSeg'),
+  solvSeg: $('solvSeg'),
+  solvNote: $('solvNote'),
   rangeBox: $('rangeBox'),
   minRating: $('minRating'),
   maxRating: $('maxRating'),
@@ -49,6 +51,11 @@ const el = {
   playFirst: $('playFirst'),
   copyIds: $('copyIds'),
   copyLink: $('copyLink'),
+  copyUnticked: $('copyUnticked'),
+  tickedBar: $('tickedBar'),
+  tickedCount: $('tickedCount'),
+  hideTicked: $('hideTicked'),
+  clearTicked: $('clearTicked'),
   snapshotNote: $('snapshotNote'),
   loading: $('loading'),
   loadingText: $('loadingText'),
@@ -63,8 +70,10 @@ const state = {
   selected: new Set(),
   mode: 'OR',
   order: 'hardest',
+  minSolv: 0,
   results: [],
   abort: null,
+  hideTicked: false,
 };
 
 // -------------------------------------------------- Router und Suchzustand
@@ -119,6 +128,7 @@ function queryToHash(query) {
   if (query.themes.length > 1) parts.push(`m=${query.mode}`);
   parts.push(`o=${query.order}`);
   parts.push(`n=${query.count}`);
+  if (query.minSolv) parts.push(`v=${query.minSolv}`);
   if (query.order === 'range') parts.push(`r=${query.min}-${query.max}`);
   return parts.join('&');
 }
@@ -141,7 +151,7 @@ function readUrl() {
   }
   if (!themes.length) return { view: 'home', query: null };
 
-  const order = ['hardest', 'easiest', 'range'].includes(p.get('o')) ? p.get('o') : 'hardest';
+  const order = ['hardest', 'easiest', 'range', 'solved'].includes(p.get('o')) ? p.get('o') : 'hardest';
   let min = 0;
   let max = 9999;
   if (order === 'range') {
@@ -161,6 +171,9 @@ function readUrl() {
       min,
       max,
       count: clampInt(p.get('n'), 1, 5000, 100),
+      // Nur Werte aus der Liste der Schwellen-Knoepfe zulassen, sonst nimmt die
+      // Seite eine Zahl an, die sie gar nicht anzeigen kann.
+      minSolv: [0, 100, 1000, 10000, 100000].includes(Number(p.get('v'))) ? Number(p.get('v')) : 0,
     },
   };
 }
@@ -183,6 +196,8 @@ function applyQuery(query) {
   el.count.value = String(query.count);
   el.minRating.value = String(query.min);
   el.maxRating.value = String(query.max);
+  state.minSolv = query.minSolv || 0;
+  setMinSolv(state.minSolv);
   setSegment(el.modeSeg, state.mode);
   setSegment(el.orderSeg, state.order);
   el.rangeBox.hidden = state.order !== 'range';
@@ -232,6 +247,7 @@ async function init() {
     .sort((a, b) => a.label.localeCompare(b.label, 'de'));
 
   el.topMeta.textContent = `${compact.format(manifest.puzzles)} Puzzles · ${Object.keys(manifest.themes).length} Themes`;
+  el.solvNote.textContent = 'from the lichess database';
   renderThemes();
   buildPresets();
 
@@ -325,6 +341,19 @@ function setSegment(node, value) {
 segmented(el.modeSeg, 'mode', updateModeCard);
 segmented(el.orderSeg, 'order', () => {
   el.rangeBox.hidden = state.order !== 'range';
+});
+
+/** Schwelle "mindestens so oft gespielt". */
+function setMinSolv(n) {
+  state.minSolv = n;
+  el.solvSeg.querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('on', Number(b.dataset.s) === n);
+  });
+  update();
+}
+
+el.solvSeg.querySelectorAll('button').forEach((b) => {
+  b.onclick = () => setMinSolv(Number(b.dataset.s));
 });
 
 function buildPresets() {
@@ -427,16 +456,24 @@ function update() {
       return;
     }
     el.estimate.classList.remove('warn');
-    if (query.mode === 'AND' && count > 1) {
+    if (query.order === 'solved') {
+      el.estimate.textContent =
+        `"Most solved" reads all buckets of the selected themes - ` +
+        `about ${fmtBytes(estimateAll(state.manifest, query))}.` +
+        (state.minSolv ? ' The "times solved" filter applies while reading.' : '');
+    } else if (query.mode === 'AND' && count > 1) {
       // UND liest von oben her und hört auf, sobald genug Treffer da sind.
       // Wie viel das wirklich wird, hängt von der Kombination ab - deshalb
       // die Obergrenze nennen statt eine Zahl zu behaupten, die nicht stimmt.
       const max = estimateAll(state.manifest, query);
       const min = estimateBytes(state.manifest, query);
       el.estimate.textContent =
-        `AND stops at ${query.count} results: at least ${fmtBytes(min)}, at most ${fmtBytes(max)}`;
+        `AND stops at ${query.count} results: at least ${fmtBytes(min)}, at most ${fmtBytes(max)}` +
+        (state.minSolv ? ` · solved ${state.minSolv.toLocaleString('en-US')}+` : '');
     } else {
-      el.estimate.textContent = `Data for this search: about ${fmtBytes(estimateAll(state.manifest, query))}`;
+      el.estimate.textContent =
+        `Data for this search: about ${fmtBytes(estimateAll(state.manifest, query))}` +
+        (state.minSolv ? ` · solved ${state.minSolv.toLocaleString('en-US')}+` : '');
     }
   } else {
     el.estimate.textContent = '';
@@ -445,6 +482,25 @@ function update() {
   // Jede Änderung sofort in der Adresse festhalten. replaceState statt
   // pushState: die Auswahl ist kein Schritt in der Historie, nur die Suche.
   writeUrl(false);
+}
+
+/**
+ * Spielzahl in Kurzform. Der Index speichert sie logarithmisch in einem Byte,
+ * der Fehler betraegt hoechstens 4,4 Prozent - deshalb das "~" und keine
+ * vierstellige Genauigkeit, die nicht da ist.
+ */
+// Zwei signifikante Stellen, nicht vier: der Index speichert die Spielzahl
+// logarithmisch in einem Byte. Mehr Nachkommastellen wuerden Genauigkeit
+// vortaeuschen, die nicht da ist - und vier gleiche Werte in Folge (223.4K)
+// sehen nach einem Fehler aus statt nach einer Naeherung.
+const solvFmt = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumSignificantDigits: 2,
+});
+function fmtSolv(code) {
+  const n = decodeSolv(code);
+  if (n <= 0) return '–';
+  return '~' + (n < 1000 ? String(n) : solvFmt.format(n));
 }
 
 function fmtBytes(n) {
@@ -472,6 +528,7 @@ function buildQuery() {
     min,
     max,
     count: clampInt(el.count.value, 1, 5000, 100),
+    minSolv: state.minSolv,
   };
 }
 
@@ -582,8 +639,11 @@ function describeQuery(query) {
       ? 'hardest first'
       : query.order === 'easiest'
         ? 'easiest first'
-        : `Rating ${query.min}–${query.max}`;
-  return { names, order };
+        : query.order === 'solved'
+          ? 'most solved first'
+          : `Rating ${query.min}–${query.max}`;
+  const filter = query.minSolv ? `, solved ${query.minSolv.toLocaleString('en-US')}+` : '';
+  return { names, order: order + filter };
 }
 
 function renderResults() {
@@ -602,6 +662,22 @@ function renderResults() {
   const frag = document.createDocumentFragment();
   items.forEach((item, i) => {
     const li = document.createElement('li');
+    if (ticked.has(item.id)) li.classList.add('done');
+    // Abhaken als eigener Knopf: die Zeile selbst ist der Link zu lichess und
+    // soll nicht beim Abhaken verschluckt werden.
+    const tick = document.createElement('button');
+    tick.type = 'button';
+    tick.className = 'tick';
+    tick.setAttribute('aria-pressed', ticked.has(item.id) ? 'true' : 'false');
+    tick.setAttribute('aria-label', `Mark puzzle ${item.id} as done`);
+    tick.textContent = ticked.has(item.id) ? '✓' : '';
+    tick.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleTicked(item.id);
+      renderResults();
+    };
+
     const a = document.createElement('a');
     a.className = 'item';
     a.href = puzzleUrl(item.id);
@@ -610,16 +686,26 @@ function renderResults() {
     a.innerHTML =
       `<span class="pos">${i + 1}</span>` +
       `<span class="rating">${item.rating}</span>` +
-      `<span class="id">${item.id}</span>`;
+      `<span class="id">${item.id}</span>` +
+      `<span class="solv" title="Times solved in the lichess database. The value is ` +
+        `approximate: the index stores it logarithmically in one byte.">${fmtSolv(item.solv || 0)}</span>`;
     a.setAttribute('aria-label', `Open puzzle ${item.id} with rating ${item.rating} on lichess`);
     const flag = document.createElement('span');
     flag.className = 'flag';
     flag.textContent = '↗';
-    li.append(a, flag);
-    frag.append(li);
+    li.append(tick, a, flag);
+    if (!(state.hideTicked && ticked.has(item.id))) frag.append(li);
   });
   el.resultList.replaceChildren(frag);
 
+  // Abhak-Leiste
+  const anzahl = tickedInResults();
+  el.tickedBar.hidden = items.length === 0;
+  el.tickedCount.textContent = anzahl
+    ? `${anzahl} of ${items.length} ticked as done`
+    : `${items.length} puzzles · tick them off as you play`;
+
+  el.copyUnticked.disabled = items.length === 0 || tickedInResults() === 0;
   el.playFirst.disabled = items.length === 0;
   el.playFirst.textContent = `▶ Open on lichess (${items.length})`;
   el.copyIds.disabled = items.length === 0;
@@ -649,6 +735,67 @@ el.copyIds.onclick = () =>
   );
 
 el.copyLink.onclick = () => copyText(location.href, 'Link copied');
+
+// ------------------------------------------------- Puzzles abhaken
+
+/**
+ * Welche Puzzles sind erledigt? Ein Satz von Puzzle-IDs im localStorage -
+ * global, nicht pro Liste: wenn ein Puzzle einmal gelöst ist, ist es das auch
+ * in einer anderen Liste. Gekappt, damit der Speicher nicht unbegrenzt wächst.
+ */
+const TICKED = 'lpf.ticked.v1';
+const TICKED_MAX = 5000;
+let ticked = loadTicked();
+
+function loadTicked() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TICKED) || '[]');
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveTicked() {
+  try {
+    const list = [...ticked];
+    localStorage.setItem(TICKED, JSON.stringify(list.slice(-TICKED_MAX)));
+  } catch {
+    /* egal - das Abhaken funktioniert auch ohne Speicherzugriff */
+  }
+}
+
+function toggleTicked(id) {
+  if (ticked.has(id)) ticked.delete(id);
+  else ticked.add(id);
+  saveTicked();
+}
+
+/** Anzahl der abgehakten Puzzles in der aktuellen Liste. */
+function tickedInResults() {
+  return state.results.reduce((n, item) => n + (ticked.has(item.id) ? 1 : 0), 0);
+}
+
+el.hideTicked.onclick = () => {
+  state.hideTicked = !state.hideTicked;
+  el.hideTicked.classList.toggle('on', state.hideTicked);
+  el.hideTicked.textContent = state.hideTicked ? 'Show all' : 'Hide ticked';
+  renderResults();
+};
+
+el.clearTicked.onclick = () => {
+  ticked.clear();
+  saveTicked();
+  renderResults();
+};
+
+el.copyUnticked.onclick = () => {
+  const offen = state.results.filter((x) => !ticked.has(x.id));
+  copyText(
+    offen.map((x) => x.id).join('\n'),
+    `Copied ${offen.length} unsolved IDs`,
+  );
+};
 
 // ------------------------------------------------- Letzte Suche merken
 

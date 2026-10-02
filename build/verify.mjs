@@ -277,6 +277,104 @@ function idSet(theme) {
   );
 }
 
+// --- Spielzahl: Reihenfolge und Schwelle ------------------------------------
+// Das Shell-Skript kennt keine Spielzahlen, es kann also keine Referenz liefern.
+// Stattdessen wird hier unabhaengig aus den Index-Dateien gerechnet: alle
+// Buckets eines Themes lesen, filtern, sortieren, die ersten n nehmen. Der
+// Vergleich laeuft ueber die Rohwerte der Datei (Rating, ID, Byte), nicht
+// ueber die Anzeige - so schleicht sich kein Rundungsfehler durch.
+{
+  const zlib = await import('node:zlib');
+  const base = process.env.LPF_BASE || 'http://127.0.0.1:8123/';
+  const solveSteps = 13;
+  const encSolv = (n) => (n <= 0 ? 0 : Math.min(255, Math.floor(solveSteps * Math.log2(n + 1))));
+
+  const cache = new Map();
+  function alleEintraege(theme) {
+    if (cache.has(theme)) return cache.get(theme);
+    const info = manifest.themes[theme];
+    const out = [];
+    for (const [start] of info.b) {
+      const raw = zlib.gunzipSync(fs.readFileSync(path.join(repo, 'docs', 'data', `${theme}_${start}.tsv.gz`)));
+      for (const line of raw.toString('utf8').split('\n')) {
+        if (!line) continue;
+        const f = line.split('\t');
+        out.push({ rating: Number(f[0]), id: f[1], solv: Number(f[2]) });
+      }
+    }
+    cache.set(theme, out);
+    return out;
+  }
+
+  const pruefe = async (name, query, erwartet) => {
+    const r = await runQuery(manifest, query, {});
+    const ist = r.items.map((x) => `${x.id}/${x.rating}/${x.solv}`).join(' ');
+    if (ist === erwartet.join(' ')) {
+      console.log(
+        `  ok    ${name} (${query.themes.join(query.mode === 'AND' ? ' \u2229 ' : ' \u222a ')}, ` +
+          `${query.order}${query.minSolv ? `, ab ${query.minSolv}` : ''}): ` +
+          `${query.count} Treffer stimmen`,
+      );
+    } else {
+      failures++;
+      console.log(`  FEHLER ${name}: erstes Element ${ist.split(' ')[0]} statt ${erwartet[0] || '(leer)'}`);
+    }
+  };
+
+  // 1 · "meistgeloest zuerst": Spielzahl absteigend, dann Rating absteigend
+  {
+    const alle = alleEintraege('mateIn3')
+      .sort((a, b) => b.solv - a.solv || b.rating - a.rating || (a.id < b.id ? -1 : 1))
+      .slice(0, 25);
+    await pruefe('Spielzahl-Reihenfolge', { themes: ['mateIn3'], mode: 'OR', order: 'solved', min: 0, max: 9999, count: 25 }, alle.map((x) => `${x.id}/${x.rating}/${x.solv}`));
+  }
+
+  // 2 · Schwelle "mindestens 1.000 mal" mit "schwerste zuerst"
+  {
+    const grenze = encSolv(1000);
+    const alle = alleEintraege('mateIn3')
+      .filter((x) => x.solv >= grenze)
+      .sort((a, b) => b.rating - a.rating || (a.id < b.id ? -1 : 1))
+      .slice(0, 25);
+    await pruefe('Schwelle 1.000+ mit Rating', { themes: ['mateIn3'], mode: 'OR', order: 'hardest', min: 0, max: 9999, count: 25, minSolv: 1000 }, alle.map((x) => `${x.id}/${x.rating}/${x.solv}`));
+    const drueber = alle.length > 0 ? alle[0].solv : 0;
+    drueber >= grenze
+      ? console.log(`  ok    Schwellen-Logik: ab 1.000 heisst Byte >= ${grenze}, kleinster Treffer hat ${drueber}`)
+      : failures++;
+  }
+
+  // 3 · UND mit Spielzahl-Reihenfolge
+  {
+    const mengeB = new Set(alleEintraege('attraction').map((x) => x.id));
+    const alle = alleEintraege('mateIn3')
+      .filter((x) => mengeB.has(x.id))
+      .sort((a, b) => b.solv - a.solv || b.rating - a.rating || (a.id < b.id ? -1 : 1))
+      .slice(0, 10);
+    await pruefe('UND mit Spielzahl-Reihenfolge', { themes: ['mateIn3', 'attraction'], mode: 'AND', order: 'solved', min: 0, max: 9999, count: 10 }, alle.map((x) => `${x.id}/${x.rating}/${x.solv}`));
+  }
+
+  // 4 · UNberuecksichtigung: die Spalte darf die alten Reihenfolgen nicht
+  //     verschieben. Ein Puzzle mit vielen Spielzahlen und hohem Rating muss
+  //     bei "schwerste zuerst" trotzdem vorn stehen.
+  {
+    const alle = alleEintraege('mateIn3')
+      .sort((a, b) => b.rating - a.rating || (a.id < b.id ? -1 : 1))
+      .slice(0, 5);
+    const r = await runQuery(manifest, { themes: ['mateIn3'], mode: 'OR', order: 'hardest', min: 0, max: 9999, count: 5 }, {});
+    const ok2 = r.items.every((x, i) => x.id === alle[i].id);
+    if (ok2) {
+      console.log(
+        `  ok    Spielzahl stört die Rating-Reihenfolge nicht ` +
+          `(${r.items[0].id} mit ${r.items[0].solv} Spielen oben)`,
+      );
+    }
+    else {
+      failures++;
+      console.log('  FEHLER Rating-Reihenfolge durch Spielzahl verrutscht');
+    }
+  }
+}
+
 for (const sc of scenarios) {
   const t0 = Date.now();
 

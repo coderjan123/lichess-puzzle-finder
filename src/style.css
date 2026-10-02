@@ -198,10 +198,17 @@ h2 {
   margin-bottom: 0.8rem;
 }
 
-/* Drei Knopfzeilen: 100px Grundbreite, damit sie auf einem 390px-Handy in
-   eine Zeile passen statt umzubrechen. */
+/* Der Hauptknopf auf eine eigene Zeile, die drei Nebenknöpfe darunter -
+   auf einem 390px-Handy passt das ohne Umbruch. */
 .row > button {
-  flex: 1 1 100px;
+  flex: 1 1 96px;
+  font-size: 0.88rem;
+  padding: 0.55rem 0.4rem;
+}
+
+.row > button.primary {
+  flex: 1 1 100%;
+  font-size: 1rem;
 }
 
 .two {
@@ -455,6 +462,97 @@ button.big {
 .results a.item:visited .id {
   color: var(--fg-dim);
   opacity: 0.6;
+}
+
+/* Abhak-Knopf: eigene Spalte links, damit der Link zu lichess ganz bleibt.
+   Der leere Zustand bekommt einen sichtbaren Kreis, sonst ist nicht
+   erkennbar, dass man hier tippen kann. */
+.results .tick {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  align-self: stretch;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--accent);
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.results .tick::before {
+  content: '';
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  position: absolute;
+}
+
+.results .tick {
+  position: relative;
+}
+
+.results li.done .tick::before {
+  display: none;
+}
+
+.results .tick:hover {
+  background: var(--bg-3);
+}
+
+.results .tick:hover::before {
+  border-color: var(--accent);
+}
+
+/* Erledigt: Zeile wird zurueckgenommen, damit man den Rest sieht. */
+.results li.done {
+  opacity: 0.45;
+}
+
+.results li.done a.item .id,
+.results li.done a.item .rating {
+  text-decoration: line-through;
+}
+
+.results .solv {
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Leiste mit Zaehler und den zwei Knoepfen fuer die abgehakten Puzzles. */
+.ticked-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+  margin: -0.2rem 0 0.7rem;
+}
+
+.ticked-bar .grow {
+  flex: 1;
+}
+
+.ticked-bar button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg-dim);
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.ticked-bar button.on {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .results .pos {

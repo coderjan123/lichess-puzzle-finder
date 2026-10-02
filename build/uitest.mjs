@@ -422,7 +422,145 @@ step('13 · Suchzustand in der Adresse');
     : bad(`${neuErrors} Konsolenfehler: ${consoleErrors.slice(consoleBefore, consoleBefore + 3).join(' | ')}`);
 }
 
-step('14 · Konsole');
+step('14 · Spielzahl: Reihenfolge und Schwelle');
+{
+  const sctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const sp = await sctx.newPage();
+  sp.setDefaultTimeout(90_000);
+  await sp.goto(BASE, { waitUntil: 'load' });
+  await waitForApp(sp);
+
+  await sp.fill('#themeSearch', 'mateIn3');
+  await sp.locator('#themeList .chip[data-theme="mateIn3"]').click();
+  await sp.fill('#themeSearch', '');
+
+  // "Meistgeloest zuerst"
+  await sp.click('#orderSeg button[data-v="solved"]');
+  const erwartetSolv = (
+    await runQuery(manifest, { themes: ['mateIn3'], mode: 'OR', order: 'solved', min: 0, max: 9999, count: 30 }, {})
+  ).items;
+  await sp.fill('#count', '30');
+  await sp.click('#searchBtn');
+  await sp.waitForSelector('#viewResults:not([hidden])');
+  const istSolv = await sp.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()));
+  istSolv.join() === erwartetSolv.map((x) => x.id).join()
+    ? ok(`"Most solved first" liefert dieselbe Liste wie der Reader (${istSolv.length} IDs)`)
+    : bad(`"Most solved first" weicht ab: ${istSolv.slice(0, 3).join(' ')} …`);
+
+  // Die Spielzahl steht in der Zeile und ist nicht leer.
+  const anzeigen = await sp.$$eval('#resultList .solv', (n) => n.map((x) => x.textContent.trim()));
+  anzeigen.length === 30 && anzeigen.every((t) => t.length > 0)
+    ? ok(`Spielzahl in jeder Zeile, z. B. ${anzeigen.slice(0, 4).join(' · ')}`)
+    : bad(`Spielzahl fehlt: ${JSON.stringify(anzeigen.slice(0, 4))}`);
+  /^~[\d.]/.test(anzeigen[0] || '')
+    ? ok('mit "~" gekennzeichnet (die Kodierung ist logarithmisch)')
+    : bad(`keine Kennzeichnung als Näherung: "${anzeigen[0]}"`);
+
+  // Schwelle
+  await sp.click('#backBtn');
+  await sp.waitForSelector('#viewHome:not([hidden])');
+  await sp.click('#solvSeg button[data-s="10000"]');
+  const erwartetSchwelle = (
+    await runQuery(manifest, { themes: ['mateIn3'], mode: 'OR', order: 'hardest', min: 0, max: 9999, count: 30, minSolv: 10000 }, {})
+  ).items;
+  await sp.click('#orderSeg button[data-v="hardest"]');
+  await sp.click('#searchBtn');
+  await sp.waitForSelector('#viewResults:not([hidden])');
+  const istSchwelle = await sp.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()));
+  istSchwelle.join() === erwartetSchwelle.map((x) => x.id).join()
+    ? ok(`Schwelle "10,000+" liefert dieselbe Liste wie der Reader (${istSchwelle.length} IDs)`)
+    : bad(`Schwelle weicht ab: ${istSchwelle.slice(0, 3).join(' ')} …`);
+
+  // Und sie steht in der Adresse, damit die Suche teilbar bleibt.
+  /v=10000/.test(await sp.evaluate(() => location.hash))
+    ? ok('Schwelle steht in der Adresse')
+    : bad(`Adresse ohne Schwelle: ${await sp.evaluate(() => location.hash)}`);
+
+  // Schwelle in einem frischen Fenster
+  const mitSchwelle = await sp.evaluate(() => location.href);
+  const sp2 = await sctx.newPage();
+  sp2.setDefaultTimeout(90_000);
+  await sp2.goto(mitSchwelle, { waitUntil: 'load' });
+  await sp2.waitForSelector('#viewResults:not([hidden])', { timeout: 60_000 });
+  const ausNeu = await sp2.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()));
+  ausNeu.join() === istSchwelle.join()
+    ? ok('Geteilter Link behält die Schwelle und zeigt dieselbe Liste')
+    : bad('Geteilter Link zeigt eine andere Liste');
+  await sp2.close();
+  await sctx.close();
+}
+
+step('15 · Puzzles abhaken');
+{
+  const tctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const tp = await tctx.newPage();
+  tp.setDefaultTimeout(90_000);
+  await tp.goto(BASE, { waitUntil: 'load' });
+  await waitForApp(tp);
+
+  await tp.fill('#themeSearch', 'mateIn3');
+  await tp.locator('#themeList .chip[data-theme="mateIn3"]').click();
+  await tp.fill('#themeSearch', '');
+  await tp.fill('#count', '20');
+  await tp.click('#searchBtn');
+  await tp.waitForSelector('#viewResults:not([hidden])');
+
+  const ids = await tp.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()));
+  const leerZaehler = ((await tp.textContent('#tickedCount')) || '').trim();
+  /0 of 20|tick them off/.test(leerZaehler)
+    ? ok(`Anfangszustand: "${leerZaehler}"`)
+    : bad(`unerwarteter Anfangszustand: "${leerZaehler}"`);
+
+  // Zwei Zeilen abhaken
+  await tp.locator('#resultList li .tick').nth(0).click();
+  await tp.locator('#resultList li .tick').nth(2).click();
+  const zaehler = ((await tp.textContent('#tickedCount')) || '').trim();
+  /2 of 20/.test(zaehler) ? ok(`Zähler: "${zaehler}"`) : bad(`Zähler falsch: "${zaehler}"`);
+  (await tp.locator('#resultList li.done').count()) === 2
+    ? ok('zwei Zeilen als erledigt markiert')
+    : bad(`${await tp.locator('#resultList li.done').count()} Zeilen markiert`);
+
+  // Reload: muss erhalten bleiben
+  await tp.reload({ waitUntil: 'load' });
+  await tp.waitForSelector('#viewResults:not([hidden])', { timeout: 60_000 });
+  const danach = ((await tp.textContent('#tickedCount')) || '').trim();
+  /2 of 20/.test(danach) ? ok(`nach Reload erhalten: "${danach}"`) : bad(`nach Reload verloren: "${danach}"`);
+
+  // Zeile ausblenden
+  await tp.click('#hideTicked');
+  const sichtbar = await tp.locator('#resultList li').count();
+  sichtbar === 18
+    ? ok('"Hide ticked" blendet die zwei erledigten aus (18 Zeilen)')
+    : bad(`"Hide ticked" zeigt ${sichtbar} statt 18 Zeilen`);
+  await tp.click('#hideTicked');
+
+  // Nur ungelöste kopieren
+  await tp.click('#copyUnticked');
+  await tp.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 20_000 });
+  const meldung = ((await tp.textContent('#toast')) || '').trim();
+  /Copied 18 unsolved IDs/.test(meldung)
+    ? ok(`Meldung: "${meldung}"`)
+    : bad(`unerwartete Meldung: "${meldung}"`);
+
+  // Abhaken und Leeren
+  await tp.click('#clearTicked');
+  const geleert = ((await tp.textContent('#tickedCount')) || '').trim();
+  /0 of 20|tick them off/.test(geleert)
+    ? ok('Clear setzt alles zurück')
+    : bad(`Clear wirkte nicht: "${geleert}"`);
+  (await tp.locator('#resultList li.done').count()) === 0
+    ? ok('keine Zeile mehr als erledigt markiert')
+    : bad('es sind noch Zeilen markiert');
+
+  // Ein Klick auf den Knopf darf das Puzzle nicht bei lichess oeffnen.
+  await tp.locator('#resultList li .tick').nth(1).click();
+  (await tp.locator('#resultList li.done').count()) === 1
+    ? ok('Abhaken ohne Sprung zu lichess')
+    : bad('Abhaken hat nicht funktioniert');
+  await tctx.close();
+}
+
+step('16 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 

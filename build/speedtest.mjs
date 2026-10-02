@@ -67,6 +67,21 @@ const SCENARIOS = {
     order: 'hardest',
     count: 100,
   },
+  solved: {
+    name: 'Mate in 3 \u00b7 most solved first \u00b7 100',
+    themes: ['mateIn3'],
+    mode: 'OR',
+    order: 'solved',
+    count: 100,
+  },
+  solvedFilter: {
+    name: 'Mate in 3 \u00b7 hardest first \u00b7 solved 10,000+ \u00b7 100',
+    themes: ['mateIn3'],
+    mode: 'OR',
+    order: 'hardest',
+    count: 100,
+    minSolv: 10000,
+  },
   single: {
     name: 'Matt in 3 \u00b7 schwerste zuerst \u00b7 100',
     themes: ['mateIn3'],
@@ -211,6 +226,9 @@ await page.fill('#themeSearch', '');
 if (scenario.mode === 'AND') await page.click('#modeSeg button[data-v="AND"]');
 await page.click(`#orderSeg button[data-v="${scenario.order}"]`);
 await page.fill('#count', String(scenario.count));
+if (scenario.minSolv) {
+  await page.click(`#solvSeg button[data-s="${scenario.minSolv}"]`);
+}
 
 const estimate = await page.textContent('#estimate');
 const tQuery0 = Date.now();

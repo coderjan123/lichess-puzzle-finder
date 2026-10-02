@@ -27,8 +27,37 @@ const DATA_BASE =
     ? new URL('data/', document.baseURI).href
     : (globalThis.process?.env?.LPF_BASE || 'http://127.0.0.1:8123/') + 'data/';
 
-// Gepackter Wert: rating * 2^30 + idNum. Sortierbar als Zahl, exakt in float64.
-const SHIFT = 1073741824;
+// Gepackter Wert: solv * 2^42 + rating * 2^30 + idNum.
+// Bit 0-29 Puzzle-ID (base62, 5 Zeichen), 30-41 Rating (0-4000), 42-49
+// Spielzahl (0-255). Zusammen 50 Bit - damit bleibt alles exakt in einer
+// float64 und ohne BigInt vergleichbar.
+const SHIFT = 1073741824; // 2^30
+const SOLV_SCALE = 4398046511104; // 2^42
+const RATING_MASK = 0xfff;
+const ID_MASK = SHIFT - 1;
+
+// Schrittweite der Spielzahl-Kodierung - muss zu build_index.py passen
+// (SOLV_STEPS). Der Index kodiert 13 Stufen je Oktave in ein Byte.
+const SOLV_STEPS = 13;
+
+const solvOf = (v) => Math.floor(v / SOLV_SCALE);
+const ratingOf = (v) => Math.floor(v / SHIFT) & RATING_MASK;
+const idOf = (v) => v % SHIFT;
+
+/**
+ * Spielzahl -> Byte, wie im Index-Build.Fuer Schwellen wird abgerundet, damit
+ * "mindestens n" nie etwas ausschliesst, was im Index schon durch ist.
+ */
+export function encodeSolv(n) {
+  if (n <= 0) return 0;
+  return Math.min(255, Math.floor(SOLV_STEPS * Math.log2(n + 1)));
+}
+
+/** Byte -> naeherungsweise Spielzahl, fuer die Anzeige. */
+export function decodeSolv(code) {
+  if (code <= 0) return 0;
+  return Math.round(2 ** (code / SOLV_STEPS) - 1);
+}
 
 const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 const DECODE = Object.create(null);
@@ -110,9 +139,18 @@ export function bucketsIn(manifest, theme, min, max) {
   if (!info) return [];
   const per = manifest.bytesPerEntry || 4.4;
   const out = [];
-  for (const [start, count] of info.b) {
+  for (const e of info.b) {
+    // [start, anzahl, maxSolv] - maxSolv wird nur fuer "meistgeloest"
+    // gebraucht, aeltere Manifeste haben es noch nicht.
+    const [start, count, maxSolv] = e;
     if (start + manifest.bucketSize - 1 < min || start > max) continue;
-    out.push({ start, count, size: Math.round(count * per), file: bucketFile(theme, start) });
+    out.push({
+      start,
+      count,
+      maxSolv: maxSolv || 0,
+      size: Math.round(count * per),
+      file: bucketFile(theme, start),
+    });
   }
   out.sort((a, b) => a.start - b.start);
   return out;
@@ -173,6 +211,10 @@ function andWindows(manifest, query) {
  * Obergrenze und behandelt die Untergrenze als "mindestens".
  */
 export function estimateBytes(manifest, query) {
+  // Nach Spielzahl sortieren liest die Buckets des Themes immer vollstaendig -
+  // die Buckets ueberschneiden sich darin, ein frueher Abbruch waere nicht
+  // moeglich.
+  if (query.order === 'solved') return estimateAll(manifest, query);
   if (query.mode !== 'AND' || query.themes.length < 2) return estimateAll(manifest, query);
   const wanted = new Set(andWindows(manifest, query));
   let bytes = 0;
@@ -385,20 +427,20 @@ async function* decompressedText(res, onChunk) {
 // ------------------------------------------------------------------ Datei lesen
 
 /**
- * Eine Bucket-Datei: "rating<TAB>id"-Zeilen, im File Rating absteigend.
+ * Eine Bucket-Datei: "rating<TAB>id<TAB>spielzahl"-Zeilen, im File Rating
+ * absteigend.
  *
- * reverse=true liefert aufsteigend; dafür wird die Datei komplett gelesen und
- * sortiert, was nur die niedrigsten Buckets betrifft (die sind klein).
+ * sortOrder:
+ *   null    die Dateireihenfolge ist richtig (Rating absteigend) - gestreamt,
+ *           bricht früh ab, das ist der Normalfall
+ *   'asc'   aufsteigend nach Rating: Datei komplett lesen und sortieren
+ *   'solv'  nach Spielzahl absteigend: Datei komplett lesen und sortieren
  *
  * Der Strom endet vorzeitig, sobald der Aufrufer genug hat - der laufende
  * Download wird dann sofort abgebrochen.
  */
 async function* bucketStream(bucket, opts, ctx) {
-  const { min, max, progress } = opts;
-  // "Einfachste zuerst" verlangt aufsteigende Reihenfolge. Die Datei liegt
-  // aber absteigend vor, dann wird sie komplett gelesen und sortiert - das
-  // betrifft nur die niedrigen Buckets, die sind klein.
-  const reverse = !opts.desc;
+  const { min, max, progress, minSolv, sortOrder } = opts;
   if (ctx.signal.aborted) return;
 
   let res;
@@ -409,7 +451,7 @@ async function* bucketStream(bucket, opts, ctx) {
     throw err;
   }
 
-  const buffered = reverse ? [] : null;
+  const buffered = sortOrder ? [] : null;
   let rest = '';
   let complete = false;
 
@@ -423,12 +465,17 @@ async function* bucketStream(bucket, opts, ctx) {
         const line = rest.slice(from, idx);
         from = idx + 1;
         if (!line) continue;
-        const tab = line.indexOf('\t');
-        const rating = +line.slice(0, tab);
-        // Das File ist absteigend sortiert: alles danach ist noch kleiner.
-        if (rating < min) break outer;
+        const tab1 = line.indexOf('\t');
+        const tab2 = line.indexOf('\t', tab1 + 1);
+        const rating = +line.slice(0, tab1);
+        // Das File ist absteigend nach Rating sortiert: alles danach ist noch
+        // kleiner. Beim Sortieren nach Spielzahl gilt das nicht - dann wird
+        // gelesen, bis die Datei aufgebraucht ist (sortOrder gesetzt).
+        if (!sortOrder && rating < min) break outer;
         if (rating > max) continue;
-        const value = rating * SHIFT + idToNum(line.slice(tab + 1));
+        const solv = tab2 === -1 ? 0 : +line.slice(tab2 + 1);
+        if (solv < minSolv) continue;
+        const value = solv * SOLV_SCALE + rating * SHIFT + idToNum(line.slice(tab1 + 1, tab2 === -1 ? undefined : tab2));
         if (buffered) buffered.push(value);
         else yield value;
       }
@@ -442,17 +489,9 @@ async function* bucketStream(bucket, opts, ctx) {
   }
 
   if (buffered) {
-    // Aufsteigend ausgeben: Rating aufsteigend, bei Gleichstand ID aufsteigend.
-    buffered.sort(comparePacked);
+    buffered.sort(sortOrder === 'solv' ? byOrder('solved') : byOrder('easiest'));
     for (const value of buffered) yield value;
   }
-}
-
-/** Aufsteigende Reihenfolge fuer gepackte Werte. */
-function comparePacked(x, y) {
-  const rx = Math.floor(x / SHIFT);
-  const ry = Math.floor(y / SHIFT);
-  return rx !== ry ? rx - ry : x % SHIFT - (y % SHIFT);
 }
 
 /**
@@ -466,6 +505,35 @@ function comparePacked(x, y) {
  */
 async function* themeStream(manifest, theme, opts, ctx, slot) {
   const buckets = bucketsIn(manifest, theme, opts.min, opts.max);
+
+  if (opts.order === 'solved') {
+    // Nach Spielzahl sortieren: die Buckets überschneiden sich darin, eine
+    // Verkettung wäre also nicht sortiert (in einem Bucket kann ein Puzzle mit
+    // 5.000 stehen, im nächsten eins mit 90.000). Deshalb alle Buckets lesen
+    // und gemeinsam sortieren. Kostet die ganze Datei des Themes - die
+    // Anzeige unter dem Suchknopf sagt das vorher.
+    const alle = [];
+    slot.file = buckets[0] ? buckets[0].file : null;
+    for (let i = 0; i < buckets.length; i++) {
+      slot.file = buckets[i].file;
+      slot.next = buckets[i + 1] ? buckets[i + 1].file : null;
+      if (slot.next) preload(ctx, [slot.next]);
+      for await (const v of bucketStream(buckets[i], { ...opts, sortOrder: 'solv' }, ctx)) {
+        alle.push(v);
+      }
+      if (ctx.signal.aborted) break;
+    }
+    alle.sort(byOrder('solved'));
+    slot.file = null;
+    slot.next = null;
+    for (const v of alle) {
+      if (ctx.signal.aborted) return;
+      yield v;
+    }
+    return;
+  }
+
+  const sortOrder = opts.order === 'easiest' ? 'asc' : null;
   if (opts.desc) buckets.reverse();
   for (let i = 0; i < buckets.length; i++) {
     slot.file = buckets[i].file;
@@ -473,7 +541,7 @@ async function* themeStream(manifest, theme, opts, ctx, slot) {
     // überlappen die Wartezeiten, ohne mehr zu übertragen als nötig.
     slot.next = buckets[i + 1] ? buckets[i + 1].file : null;
     if (slot.next) preload(ctx, [slot.next]);
-    yield* bucketStream(buckets[i], opts, ctx);
+    yield* bucketStream(buckets[i], { ...opts, sortOrder }, ctx);
   }
   slot.file = null;
   slot.next = null;
@@ -482,24 +550,43 @@ async function* themeStream(manifest, theme, opts, ctx, slot) {
 // ------------------------------------------------------------------ Vergleiche
 
 /**
- * "Schwerste zuerst": größerer Wert zuerst, bei gleichem Rating die kleinere
- * Puzzle-ID. "Einfachste zuerst": kleinerer Wert zuerst, Gleichstand wie oben.
+ * Ausgabereihenfolge.
+ *
+ *   hardest  Rating absteigend, bei Gleichstand ID aufsteigend
+ *   easiest  Rating aufsteigend, bei Gleichstand ID aufsteigend
+ *   solved   Spielzahl absteigend, dann Rating absteigend, dann ID aufsteigend
+ *
+ * Für hardest und easiest wird die Spielzahl bewusst nicht betrachtet - so
+ * bleibt die Reihenfolge exakt die des Shell-Skripts, egal was die neue Spalte
+ * enthält.
  */
-function isBetter(a, b, desc) {
-  const ra = Math.floor(a / SHIFT);
-  const rb = Math.floor(b / SHIFT);
-  if (ra !== rb) return desc ? ra > rb : ra < rb;
-  return a % SHIFT < b % SHIFT;
+function isBetter(a, b, order) {
+  if (order === 'solved') {
+    const sa = solvOf(a);
+    const sb = solvOf(b);
+    if (sa !== sb) return sa > sb;
+  }
+  const ra = ratingOf(a);
+  const rb = ratingOf(b);
+  if (ra !== rb) return order === 'easiest' ? ra < rb : ra > rb;
+  return idOf(a) < idOf(b);
+}
+
+/** Sortierfunktion für isBetter, für Array.sort. */
+function byOrder(order) {
+  return (x, y) => (isBetter(x, y, order) ? -1 : isBetter(y, x, order) ? 1 : 0);
 }
 
 // ------------------------------------------------------------------ Suchen
 
 /** ODER-Suche: Streams aller Themes zusammenführen, Duplikate überspringen. */
 async function* mergeAny(manifest, query, progress, ctx) {
-  const desc = query.order !== 'easiest';
+  const order = query.order;
+  const desc = order !== 'easiest';
+  const minSolv = encodeSolv(query.minSolv || 0);
   const slots = query.themes.map(() => ({ file: null, next: null }));
   const streams = query.themes.map((theme, i) =>
-    themeStream(manifest, theme, { min: query.min, max: query.max, desc, progress }, ctx, slots[i]),
+    themeStream(manifest, theme, { min: query.min, max: query.max, desc, order, minSolv, progress }, ctx, slots[i]),
   );
   const heads = new Array(streams.length).fill(undefined);
   const seen = new Set();
@@ -514,7 +601,7 @@ async function* mergeAny(manifest, query, progress, ctx) {
           heads[i] = step.done ? null : step.value;
         }
         if (heads[i] === null) continue;
-        if (best === -1 || isBetter(heads[i], heads[best], desc)) best = i;
+        if (best === -1 || isBetter(heads[i], heads[best], order)) best = i;
       }
       if (best === -1) return;
       const value = heads[best];
@@ -522,7 +609,7 @@ async function* mergeAny(manifest, query, progress, ctx) {
       heads[best] = step.done ? null : step.value;
       if (seen.has(value)) continue;
       seen.add(value);
-      yield { id: numToId(value % SHIFT), rating: Math.floor(value / SHIFT) };
+      yield { id: numToId(idOf(value)), rating: ratingOf(value), solv: solvOf(value) };
       if (++found >= query.count) return;
       // Nur die gerade gelesenen Buckets offen halten: alles andere abbrechen,
       // damit die Verbindungen für die nächsten Treffer frei sind.
@@ -546,10 +633,12 @@ async function* mergeAny(manifest, query, progress, ctx) {
  */
 async function* mergeAll(manifest, query, progress, ctx) {
   const { themes, count, min, max } = query;
-  const desc = query.order !== 'easiest';
+  const order = query.order;
+  const desc = order !== 'easiest';
+  const minSolv = encodeSolv(query.minSolv || 0);
   const slots = themes.map(() => ({ file: null, next: null }));
   const streams = themes.map((theme, i) =>
-    themeStream(manifest, theme, { min, max, desc, progress }, ctx, slots[i]),
+    themeStream(manifest, theme, { min, max, desc, order, minSolv, progress }, ctx, slots[i]),
   );
   const heads = new Array(streams.length).fill(undefined);
   let found = 0;
@@ -568,7 +657,11 @@ async function* mergeAll(manifest, query, progress, ctx) {
       }
 
       if (heads.every((h) => h === heads[0])) {
-        yield { id: numToId(heads[0] % SHIFT), rating: Math.floor(heads[0] / SHIFT) };
+        yield {
+          id: numToId(idOf(heads[0])),
+          rating: ratingOf(heads[0]),
+          solv: solvOf(heads[0]),
+        };
         if (++found >= count) return;
         // Nur die gerade gelesenen Buckets offen halten: alles andere abbrechen,
         // damit die Verbindungen für die nächsten Treffer frei sind.
@@ -579,12 +672,86 @@ async function* mergeAll(manifest, query, progress, ctx) {
 
       let small = 0;
       for (let i = 1; i < streams.length; i++) {
-        if (isBetter(heads[i], heads[small], desc)) small = i;
+        if (isBetter(heads[i], heads[small], order)) small = i;
       }
       if (!(await advance(small))) return;
     }
   } finally {
     for (const s of streams) s.return?.();
+  }
+}
+
+/**
+ * "Meistgeloest zuerst" bei ODER - mit frühem Abbruch.
+ *
+ * Die Buckets eines Themes überschneiden sich in der Spielzahl: in einem kann
+ * ein Puzzle mit 5.000 stehen, im nächsten eins mit 90.000. Eine Verkettung der
+ * Buckets wäre deshalb nicht sortiert. Statt alles zu lesen, werden die Buckets
+ * nach ihrer größten Spielzahl absteigend geöffnet. Sobald der count-te Treffer
+ * mindestens so hoch liegt wie die größte Spielzahl aller noch geschlossenen
+ * Buckets, kann nichts mehr nachrücken und die Liste ist fertig.
+ *
+ * Der Vergleich ist bewusst streng (>) statt >=: bei gleicher Spielzahl werden
+ * Rating und Puzzle-ID als Reihenfolge benutzt, und ein geschlossener Bucket
+ * könnte dazwischenrutschen.
+ */
+async function* topSolved(manifest, query, progress, ctx) {
+  const count = query.count;
+  const minSolv = encodeSolv(query.minSolv || 0);
+
+  const offen = [];
+  for (const theme of query.themes) {
+    for (const b of bucketsIn(manifest, theme, query.min, query.max)) {
+      if (b.maxSolv >= minSolv) offen.push(b);
+    }
+  }
+  offen.sort((a, b) => b.maxSolv - a.maxSolv || a.start - b.start);
+
+  const gesehen = new Map(); // id -> gepackter Wert (Doppel im Mehrfach-Theme)
+  let geladen = 0;
+
+  for (let k = 0; k < offen.length; k++) {
+    if (ctx.signal.aborted) return;
+    // Die nächsten zwei Buckets vorab anfordern, während dieser gelesen wird.
+    preload(
+      ctx,
+      offen.slice(k + 1, k + 3).map((b) => b.file),
+    );
+
+    for await (const v of bucketStream(offen[k], { min: query.min, max: query.max, minSolv, progress }, ctx)) {
+      gesehen.set(idOf(v), v);
+    }
+    geladen = k + 1;
+
+    // Reicht es schon? Nur wenn der count-te Wert höher ist als alles, was in
+    // den noch nicht geöffneten Buckets steckt.
+    if (gesehen.size > count && k + 1 < offen.length) {
+      const grenze = Math.max(offen[k + 1].maxSolv, minSolv);
+      const sortiert = [...gesehen.values()].sort(byOrder('solved'));
+      const letzter = sortiert[Math.min(count, sortiert.length) - 1];
+      if (solvOf(letzter) > grenze) {
+        for (let i = 0; i < Math.min(count, sortiert.length); i++) {
+          if (ctx.signal.aborted) return;
+          yield {
+            id: numToId(idOf(sortiert[i])),
+            rating: ratingOf(sortiert[i]),
+            solv: solvOf(sortiert[i]),
+          };
+        }
+        return;
+      }
+    }
+  }
+
+  // Alle Buckets gelesen: die besten count ausgeben.
+  const sortiert = [...gesehen.values()].sort(byOrder('solved'));
+  for (let i = 0; i < Math.min(count, sortiert.length); i++) {
+    if (ctx.signal.aborted) return;
+    yield {
+      id: numToId(idOf(sortiert[i])),
+      rating: ratingOf(sortiert[i]),
+      solv: solvOf(sortiert[i]),
+    };
   }
 }
 
@@ -627,9 +794,14 @@ export async function runQuery(manifest, query, hooks = {}) {
   };
   const progress = makeProgress();
   const and = query.themes.length > 1 && query.mode === 'AND';
+  // "Meistgeloest" hat zwei Wege: bei ODER ueber die Buckets mit fruehem
+  // Abbruch (topSolved), bei UND ueber die vollstaendige Schnittmenge - dort
+  // muss man alles lesen, weil ein Puzzle erst durch den Schnitt known ist.
   const stream = and
     ? mergeAll(manifest, query, progress, ctx)
-    : mergeAny(manifest, query, progress, ctx);
+    : query.order === 'solved'
+      ? topSolved(manifest, query, progress, ctx)
+      : mergeAny(manifest, query, progress, ctx);
 
   // Alle erwarteten Buckets gleichzeitig anfordern.
   preload(ctx, plan);

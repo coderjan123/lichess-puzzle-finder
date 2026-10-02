@@ -27,6 +27,7 @@ from __future__ import annotations
 import array
 import base64
 import gzip
+import math
 import json
 import os
 import sys
@@ -35,9 +36,43 @@ import time
 # Rating-Bucket-Breite.
 BUCKET = 100
 
-# Bytes je Eintrag in den komprimierten Dateien (gemessen: 4,2-4,6 je
-# Rating-Ebene). Wird nur fuer die Groessen-Anzeige im UI gebraucht.
-BYTES_PER_ENTRY = 4.4
+# Bytes je Eintrag in den komprimierten Dateien, gemessen: 6,46 (vor der
+# Spielzahl-Spalte waren es 4,70). Wird nur fuer die Groessen-Anzeige im UI
+# gebraucht - die Suche selbst rechnet mit echten Dateigroessen nichts.
+BYTES_PER_ENTRY = 6.46
+
+# Schrittweite der logarithmischen Spielzahl-Kodierung.
+#
+# NbPlays reicht in den Daten bis ueber 220.000. Als Zahl waeren das bis zu 6
+# Zeichen je Eintrag und rund 50 MB mehr Index. Logarithmisch passt der Wert in
+# ein Byte, und die Kurve muss den ganzen Wertebereich tragen:
+#
+#   13 Stufen je Oktave x 8 Bit = 19,6 Oktaven = bis 803.000
+#   Gemessener groesster Rundungsfehler: 4,4 Prozent (bei kleinen Werten, wo
+#   der Abzug der 1 staerker wiegt). Die Daten reichen bis 221.000, es ist
+#   also dreifacher Puffer nach oben.
+#
+# "Mindestens 1.000 mal" heisst damit "mindestens ~960 mal". Fuer die Frage
+# "wurde das oft genug gespielt" ist das unerheblich - und die Selbstpruefung
+# unten laesst den Build abbrechen, falls der Wertebereich doch nicht reicht.
+SOLV_STEPS = 13
+
+# Groesster Wert, den das Byte noch trägt (Puffer nach oben).
+SOLV_CEILING = int(2 ** (255 / SOLV_STEPS)) - 1
+
+
+def encode_solv(nb_plays: int) -> int:
+    """Wandelt eine Spielzahl in ein Byte (0-255), logarithmisch."""
+    if nb_plays <= 0:
+        return 0
+    return min(255, int(round(SOLV_STEPS * math.log2(nb_plays + 1))))
+
+
+def decode_solv(code: int) -> int:
+    """Umkehrung fuer Anzeige und Schwellen: naeherungsweise Spielzahl."""
+    if code <= 0:
+        return 0
+    return int(round(2 ** (code / SOLV_STEPS) - 1))
 
 ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 BASE = len(ALPHABET)
@@ -105,6 +140,8 @@ def main() -> int:
     # sagen, statt mehrere Megabyte zu laden.
     theme_index: dict[str, int] = {}
     pairs_seen: set[int] = set()
+    # Stichprobe der Spielzahlen fuer die Selbstpruefung weiter unten.
+    solv_sample: list[tuple[int, int]] = []
 
     print(f"Lese {csv_path} ...")
     t0 = time.time()
@@ -125,6 +162,12 @@ def main() -> int:
 
             puzzle_id = parts[0]
             themes = parts[7]
+            # Spalte 7 (0-basiert) ist NbPlays. Fehlt der Wert bei sehr neuen
+            # Puzzles, zaehlt es als 0.
+            try:
+                nb_plays = int(parts[6])
+            except (ValueError, IndexError):
+                nb_plays = 0
 
             if not puzzle_id:
                 continue
@@ -133,7 +176,8 @@ def main() -> int:
             except ValueError:
                 continue
 
-            value = (int(rating) << 30) | encode_id(puzzle_id)
+            # Gepackt: Spielzahl (8 Bit) | Rating (12 Bit) | Puzzle-ID (30 Bit)
+            value = (encode_solv(nb_plays) << 42) | (int(rating) << 30) | encode_id(puzzle_id)
 
             row_themes = [t for t in themes.split(" ") if t]
 
@@ -164,6 +208,9 @@ def main() -> int:
                 if rating > ratings_max[theme]:
                     ratings_max[theme] = int(rating)
 
+            if len(solv_sample) < 20000 and rows % 37 == 0:
+                solv_sample.append((encode_solv(nb_plays), nb_plays))
+
             rows += 1
             if rows % 1_000_000 == 0:
                 print(f"  {rows:,} Zeilen  ({time.time() - t0:.0f}s)")
@@ -186,24 +233,33 @@ def main() -> int:
 
     for theme in sorted(packed):
         # Sortierung: Rating absteigend, bei Gleichstand Puzzle-ID aufsteigend.
-        # Der gepackte Wert ist rating * 2**30 + id, also sorts ascending nach
-        # Rating und nach ID. Der zweite, stabile Sort dreht nur die Rating-
-        # Reihenfolge um und lässt die ID-Reihenfolge within eines Ratings
-        # unangetastet (Python-Sort ist stabil).
+        # Gepackt ist der Wert als solv | rating | id, deshalb muss hier ueber
+        # das Ratingmaskiert werden - ein Sortieren auf den ganzen Wert wuerde
+        # zuerst nach Spielzahl ordnen.
+        # Python sortiert stabil, also muss der NEBENSchluessel zuerst laufen:
+        # erst nach ID aufsteigend, dann stabil nach Rating absteigend. Die
+        # Reihenfolge der IDs innerhalb eines Ratings bleibt damit erhalten.
+        id_mask = (1 << 30) - 1
         values = sorted(packed[theme])
-        values.sort(key=lambda v: v >> 30, reverse=True)
+        values.sort(key=lambda v: v & id_mask)
+        values.sort(key=lambda v: -((v >> 30) & 0xFFF))
         packed[theme] = array.array("q")
 
         # In Buckets gruppieren. Die Werte liegen schon sortiert vor.
         buckets: dict[int, list[int]] = {}
         for v in values:
-            buckets.setdefault((v >> 30) // BUCKET, []).append(v)
+            buckets.setdefault(((v >> 30) & 0xFFF) // BUCKET, []).append(v)
 
         entries = []
         for start in sorted(buckets, reverse=True):
             chunk = buckets[start]
+            # Drei Spalten: Rating, Puzzle-ID, Spielzahl-Kodierung.
+            # Die Datei bleibt nach Rating absteigend sortiert - so laesst sich
+            # beim Lesen weiterhin frueh abbrechen. Sortiert nach Spielzahl
+            # wird erst beim Lesen, und nur wenn danach gefragt wird.
             raw = "".join(
-                f"{(v >> 30)}\t{decode_id(v & ((1 << 30) - 1))}\n" for v in chunk
+                f"{(v >> 30) & 0xFFF}\t{decode_id(v & ((1 << 30) - 1))}\t{(v >> 42) & 0xFF}\n"
+                for v in chunk
             ).encode()
             gz = gzip.compress(raw, compresslevel=9, mtime=0)
 
@@ -211,11 +267,22 @@ def main() -> int:
             with open(os.path.join(out_dir, name), "wb") as out:
                 out.write(gz)
 
-            # [start, anzahl] - der Dateiname ergibt sich aus Theme + Start.
+            # [start, anzahl, max_solv] - der Dateiname ergibt sich aus Theme
+            # und Start.
+            #
             # Die Byte-Groesse steht bewusst nicht im Manifest: sie wuerde es
-            # um ein Drittel aufblaehen und wird nur fuer eine Anzeige
-            # gebraucht, die aus anzahl x bytesPerEntry berechnet wird.
-            entries.append([start * BUCKET, len(chunk)])
+            # um ein Drittel aufblaehen und wird nur fuer eine Anzeige gebraucht,
+            # die aus anzahl x bytesPerEntry berechnet wird.
+            #
+            # max_solv dagegen ist noetig: um die top-N nach Spielzahl zu
+            # finden, werden die Buckets nach ihrer groessten Spielzahl
+            # absteigend geoeffnet. Sobald der N-te Treffer mindestens so hoch
+            # ist wie die groesste Spielzahl aller noch geschlossenen Buckets,
+            # kann nichts mehr nachruecken - dann ist die Liste fertig, ohne
+            # den Rest zu laden. Ohne diese Zahl muesste ein Theme immer
+            # vollstaendig gelesen werden (1,3 MB statt 200 kB).
+            max_solv = max((v >> 42) & 0xFF for v in chunk)
+            entries.append([start * BUCKET, len(chunk), max_solv])
 
             total_gz += len(gz)
             total_files += 1
@@ -241,7 +308,76 @@ def main() -> int:
     ordered = sorted(manifest["themes"])
     manifest["neverBits"] = pack_never(ordered, never)
 
-    # Selbstpruefung: einige Paare unabhaengig aus den Index-Dateien pruefen.
+    # Selbstpruefung 1: die Kodierung der Spielzahl.
+    #
+    # Sie ist logarithmisch, damit ein Byte reicht. Der Preis ist ein
+    # Rundungsfehler - wenn der groesser wird als geplant, sind alle Anzeigen
+    # und Schwellen falsch. 2,2 Prozent sind der Konstruktionsfehler von 16
+    # Stufen je Oktave.
+    if solv_sample:
+        worst = 0.0
+        for code, n in solv_sample:
+            if n <= 0:
+                continue
+            back = decode_solv(code)
+            worst = max(worst, abs(back - n) / n)
+        if worst > 0.05:
+            raise SystemExit(
+                f"FEHLER: Spielzahl-Kodierung verliert {worst:.1%} (erlaubt sind 5%)."
+            )
+        groesster = max(n for _c, n in solv_sample)
+        if groesster > SOLV_CEILING:
+            raise SystemExit(
+                f"FEHLER: groesste Spielzahl {groesster:,} passt nicht in das Byte "
+                f"(Grenze {SOLV_CEILING:,}). SOLV_STEPS auf {SOLV_STEPS} senken."
+            )
+        print(
+            f"  Spielzahl-Kodierung geprueft: {len(solv_sample):,} Werte, "
+            f"max. Fehler {worst:.2%}, groesster Wert {groesster:,} (Grenze {SOLV_CEILING:,})"
+        )
+
+    # Selbstpruefung 2: das Dateiformat. Jede Zeile muss drei Spalten haben,
+    # die Datei nach Rating absteigend sortiert sein und die Spielzahl im
+    # Bereich 0-255 liegen.
+    for theme in list(manifest["themes"])[:3]:
+        for start, _count, _maxsolv in manifest["themes"][theme]["b"][:2]:
+            path = os.path.join(out_dir, f"{theme}_{start}.tsv.gz")
+            prev = None
+            with gzip.open(path, "rt") as fh:
+                for line in fh:
+                    felder = line.rstrip("\n").split("\t")
+                    if len(felder) != 3:
+                        raise SystemExit(f"FEHLER: {path} hat {len(felder)} Spalten, nicht 3.")
+                    rating, pid, code = int(felder[0]), felder[1], int(felder[2])
+                    if not 0 <= code <= 255:
+                        raise SystemExit(f"FEHLER: {path} hat Spielzahl {code} ausserhalb 0-255.")
+                    # Zwei Regeln getrennt: Rating absteigend, bei Gleichstand
+                    # ID aufsteigend. Ein gemeinsamer Vergleich koennte beides
+                    # nicht ausdruecken.
+                    if prev is not None:
+                        if rating > prev[0] or (rating == prev[0] and pid < prev[1]):
+                            raise SystemExit(
+                                f"FEHLER: {path} ist nicht sortiert: "
+                                f"Rating {prev[0]}/{pid} vor {rating}/{pid}."
+                            )
+                    prev = (rating, pid)
+    # max_solv im Manifest gegen die Dateien pruefen: ein falscher Wert wuerde
+    # die Suche nach "meistgeloest" zu frueh beenden und damit eine falsche
+    # Liste liefern - der teuerste Fehler, den diese Zahl machen kann.
+    geprueft = 0
+    for theme in list(manifest["themes"])[:6]:
+        for start, _count, max_solv in manifest["themes"][theme]["b"][:6]:
+            pfad = os.path.join(out_dir, f"{theme}_{start}.tsv.gz")
+            with gzip.open(pfad, "rt") as fh:
+                ist = max(int(zeile.rstrip("\n").split("\t")[2]) for zeile in fh if zeile.strip())
+            if ist != max_solv:
+                raise SystemExit(
+                    f"FEHLER: max_solv im Manifest ist {max_solv}, in {pfad} steht {ist}."
+                )
+            geprueft += 1
+    print(f"  max_solv im Manifest geprueft: {geprueft} Buckets stimmen")
+
+    # Selbstpruefung 3: einige Paare unabhaengig aus den Index-Dateien pruefen.
     # Faellt eine Fehlklassifikation auf, bricht der Build ab - eine falsche
     # "nie gemeinsam"-Liste wuerde auf der Website leere Ergebnisse zeigen.
     probe_pairs = [
@@ -266,8 +402,8 @@ def main() -> int:
         flagged = bool((raw_bits[pos // 8] >> (7 - (pos % 8))) & 1)
 
         shared = False
-        starts_a = {s for s, _ in manifest["themes"][a]["b"]}
-        starts_b = {s for s, _ in manifest["themes"][b]["b"]}
+        starts_a = {s for s, _c, _m in manifest["themes"][a]["b"]}
+        starts_b = {s for s, _c, _m in manifest["themes"][b]["b"]}
         for start in sorted(starts_a & starts_b)[:6]:
             with gzip.open(os.path.join(out_dir, f"{a}_{start}.tsv.gz"), "rt") as fa:
                 ids_a = {line.split("\t")[1] for line in fa if line.strip()}

@@ -75,6 +75,7 @@
               <button type="button" data-v="hardest" class="on">Hardest first</button>
               <button type="button" data-v="easiest">Easiest first</button>
               <button type="button" data-v="range">Rating range</button>
+              <button type="button" data-v="solved">Most solved</button>
             </div>
             <div id="rangeBox" hidden>
               <div class="two">
@@ -92,7 +93,21 @@
           </div>
 
           <div class="card">
-            <div class="card-head"><h2>4 · How many</h2></div>
+            <div class="card-head">
+              <h2>4 · Times solved</h2>
+              <span class="muted" id="solvNote"></span>
+            </div>
+            <div class="seg" id="solvSeg">
+              <button type="button" data-s="0" class="on">Any</button>
+              <button type="button" data-s="100">100+</button>
+              <button type="button" data-s="1000">1,000+</button>
+              <button type="button" data-s="10000">10,000+</button>
+              <button type="button" data-s="100000">100,000+</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>5 · How many</h2></div>
             <div class="two">
               <label>
                 <span>Count</span>
@@ -115,7 +130,14 @@
         <div class="row">
           <button type="button" class="primary" id="playFirst">▶ Open on lichess</button>
           <button type="button" id="copyIds">Copy IDs</button>
+          <button type="button" id="copyUnticked">Copy unsolved</button>
           <button type="button" id="copyLink">Copy link</button>
+        </div>
+        <div class="ticked-bar" id="tickedBar" hidden>
+          <span id="tickedCount"></span>
+          <span class="grow"></span>
+          <button type="button" id="hideTicked">Hide ticked</button>
+          <button type="button" id="clearTicked">Clear</button>
         </div>
         <p class="hint center">Every row opens the puzzle on lichess in a new tab.</p>
         <ol class="results" id="resultList"></ol>
