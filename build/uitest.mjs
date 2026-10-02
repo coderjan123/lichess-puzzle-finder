@@ -560,7 +560,102 @@ step('15 · Puzzles abhaken');
   await tctx.close();
 }
 
-step('16 · Konsole');
+step('16 · Deutsche Suchbegriffe und Mate-Hinweis');
+{
+  const dctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const dp = await dctx.newPage();
+  dp.setDefaultTimeout(90_000);
+  await dp.goto(BASE, { waitUntil: 'load' });
+  await waitForApp(dp);
+
+  // Wer "matt" tippt, muss die Matt-Motive finden - das war der Name vor dem
+  // Sprachwechsel und ist fuer viele die natuerlichere Eingabe.
+  const erwartet = [
+    ['matt', 'mateIn1'],
+    ['matt in 1', 'mateIn1'],
+    ['matt in 5', 'mateIn5'],
+    ['MATT IN 2', 'mateIn2'],
+    ['hinlenkung', 'attraction'],
+    ['ablenkung', 'deflection'],
+    ['gabel', 'fork'],
+    ['blockade', 'interference'],
+    ['abzugscheck', 'discoveredCheck'],
+    ['röntgen', 'xRayAttack'],
+    ['rontgen', 'xRayAttack'], // ohne Umlaut
+    ['durchstoß', 'skewer'],
+    ['rochade', 'castling'],
+    ['großmeister', 'superGM'],
+    ['eröffnung', 'opening'],
+    ['taktik', 'fork'], // Rubrik, nicht Einzelsuche
+    ['endspiel', 'endgame'],
+    ['mate in 3', 'mateIn3'],
+    ['fork', 'fork'],
+  ];
+  let falsch = 0;
+  for (const [begriff, theme] of erwartet) {
+    await dp.fill('#themeSearch', begriff);
+    await dp.waitForTimeout(90);
+    const gefunden = await dp.$$eval(
+      '#themeList .chip',
+      (ns) => ns.map((x) => x.dataset.theme),
+    );
+    if (gefunden.includes(theme)) continue;
+    falsch++;
+    console.log(`  FEHLER "${begriff}" findet ${theme} nicht (nur: ${gefunden.slice(0, 4).join(', ')})`);
+  }
+  falsch === 0
+    ? ok(`${erwartet.length} deutsche und englische Suchbegriffe treffen das richtige Theme`)
+    : bad(`${falsch} von ${erwartet.length} Begriffen treffen nicht`);
+
+  // "matt" muss die ganze Gruppe zeigen, nicht nur ein Theme.
+  await dp.fill('#themeSearch', 'matt');
+  await dp.waitForTimeout(90);
+  const mattTreffer = await dp.$$eval('#themeList .chip', (ns) => ns.map((x) => x.dataset.theme));
+  mattTreffer.length >= 20 && mattTreffer.includes('mate') && mattTreffer.includes('mateIn5')
+    ? ok(`"matt" zeigt ${mattTreffer.length} Matt-Themes inklusive "Mate (any)" und "Mate in 5"`)
+    : bad(`"matt" zeigt nur ${mattTreffer.length} Themes`);
+
+  // Mate-Hinweis
+  await dp.fill('#themeSearch', 'matt in 1');
+  await dp.locator('#themeList .chip[data-theme="mateIn1"]').click();
+  await dp.fill('#themeSearch', '');
+  await dp.waitForFunction(() => !document.getElementById('mateHint').hidden, null, { timeout: 15_000 });
+  const hinweis = ((await dp.textContent('#mateHint')) || '').trim();
+  /exactly 1 move/.test(hinweis) && /Mate \(any\)/.test(hinweis)
+    ? ok(`Hinweis erscheint: "${hinweis.slice(0, 72)}…"`)
+    : bad(`Hinweis fehlt oder ist falsch: "${hinweis}"`);
+  await dp.screenshot({ path: `${shots}/11-mate-hinweis.png` });
+
+  await dp.click('#mateHint button');
+  await dp.waitForFunction(
+    () => {
+      const an = [...document.querySelectorAll('#themeList .chip.on')].map((x) => x.dataset.theme);
+      return an.length === 1 && an[0] === 'mate';
+    },
+    null,
+    { timeout: 15_000 },
+  );
+  ok('Knopf im Hinweis wählt "Mate (any)" statt "Mate in 1"');
+  await dp.waitForFunction(() => document.getElementById('mateHint').hidden, null, { timeout: 15_000 });
+  ok('Hinweis verschwindet wieder');
+
+  // Und "Mate (any)" liefert tatsächlich Matt in 1 bis 5.
+  await dp.fill('#count', '100');
+  await dp.click('#searchBtn');
+  await dp.waitForSelector('#viewResults:not([hidden])');
+  const ids = await dp.$$eval('#resultList .id', (ns) => ns.map((x) => x.textContent.trim()));
+  const alle = new Set(
+    (
+      await runQuery(manifest, { themes: ['mate'], mode: 'OR', order: 'hardest', min: 0, max: 9999, count: 100 }, {})
+    ).items.map((x) => x.id),
+  );
+  ids.join() === [...alle].join()
+    ? ok(`"Mate (any)" liefert ${ids.length} Puzzles wie der Reader`)
+    : bad('"Mate (any)" weicht vom Reader ab');
+  await dctx.close();
+}
+
+step('17 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 

@@ -116,3 +116,106 @@ export function groupOf(theme) {
   const entry = THEMES[theme];
   return entry ? entry[1] : 'other';
 }
+
+/**
+ * Deutsche Suchbegriffe - ausschliesslich fuer das Suchfeld.
+ *
+ * Die Seite ist englisch, gesucht werden kann aber in beiden Sprachen: wer
+ * "matt" eintippt, sucht Mate-Motive, und das war vor dem Sprachwechsel der
+ * angezeigte Name. Die Namen stammen aus der Git-Historie, damit hier nichts
+ * frei erfunden ist; ergaenzt wurden Woerter, die nachgefragt wurden.
+ *
+ * Geprueft wird ueber norm() in main.js: Kleinschreibung, Umlaute werden auf
+ * ihren Grundlaut gelegt (ä->a, ö->o, ü->u, ß->ss), alles andere faellt weg.
+ * Gesucht wird mit "enthält", deshalb genuegt eine Naeherung: "matt" trifft
+ * "Matt in 2", "rontgen" trifft "Röntgenangriff".
+ *
+ * Beide Schreibweisen stehen dabei, weil ein Alias mit ae/oe/ue geschrieben
+ * nicht auf "Haengende" passt und umgekehrt auch nicht: norm() legt die
+ * Umlaute auf den Grundlaut, nicht auf "ae".
+ */
+export const SEARCH_DE = {
+  anastasiaMate: ['Anastasia-Matt'],
+  arabianMate: ['Arabisches Matt'],
+  backRankMate: ['Matt auf der 1. Reihe'],
+  balestraMate: ['Balestra-Matt'],
+  blindSwineMate: ['Blindes-Schwein-Matt'],
+  bodenMate: ['Boden-Matt'],
+  cornerMate: ['Ecken-Matt'],
+  doubleBishopMate: ['Doppel-Läufer-Matt', 'Doppel-Laeufer-Matt', 'Doppel-Laufer-Matt'],
+  dovetailMate: ['Dovetail-Matt'],
+  epauletteMate: ['Epauletten-Matt'],
+  hookMate: ['Haken-Matt'],
+  killBoxMate: ['Killbox-Matt'],
+  mate: ['Matt (alle)', 'alle mattmotive', 'mattmotiv'],
+  mateIn1: ['Matt in 1'],
+  mateIn2: ['Matt in 2'],
+  mateIn3: ['Matt in 3'],
+  mateIn4: ['Matt in 4'],
+  mateIn5: ['Matt in 5'],
+  morphysMate: ['Morphys Matt'],
+  operaMate: ['Opera-Matt'],
+  pillsburysMate: ['Pillsburys Matt'],
+  smotheredMate: ['Ersticktes Matt'],
+  swallowstailMate: ['Swallowstail-Matt'],
+  triangleMate: ['Dreiecks-Matt'],
+  vukovicMate: ['Vukovic-Matt'],
+  advancedPawn: ['Weit vorgedrungener Bauer'],
+  attraction: ['Heranziehen', 'hinlenkung', 'heranziehen'],
+  attackingF2F7: ['Angriff auf f2/f7'],
+  clearance: ['Weg freimachen'],
+  discoveredAttack: ['Abzugangriff', 'aufdeckungsangriff'],
+  fork: ['Gabel', 'gabelstellung'],
+  interference: ['Blockade', 'blockieren'],
+  kingsideAttack: ['Angriff auf die Königsseite', 'Angriff auf die Koenigsseite', 'Angriff auf die Konigsseite'],
+  pin: ['Fesselung'],
+  queensideAttack: ['Angriff auf die Damenseite'],
+  sacrifice: ['Opfer'],
+  skewer: ['Durchstoß', 'Durchstoss', 'durchstoss'],
+  xRayAttack: ['Röntgenangriff', 'Roentgenangriff', 'Rontgenangriff', 'röntgenangriff', 'röntgen'],
+  underPromotion: ['Unterwandlung', 'unterwandlung'],
+  capturingDefender: ['Verteidiger schlagen'],
+  defensiveMove: ['Verteidigungszug'],
+  trappedPiece: ['Eingefangene Figur', 'eingefangen'],
+  hangingPiece: ['Hängende Figur', 'Haengende Figur', 'Hangende Figur', 'hängende', 'haengende'],
+  quietMove: ['Stiller Zug'],
+  zugzwang: ['Zugzwang'],
+  doubleCheck: ['Doppelschach'],
+  discoveredCheck: ['Abzugscheck', 'abzugschach'],
+  deflection: ['Ablenkung', 'umlenkung', 'ablenkung'],
+  intermezzo: ['Intermezzo'],
+  enPassant: ['En passant'],
+  promotion: ['Umwandlung', 'umwandlung'],
+  collinearMove: ['Kollinearer Zug'],
+  bishopEndgame: ['Läuferendspiel', 'Laeuferendspiel', 'Lauferendspiel', 'läufer', 'laeufer'],
+  knightEndgame: ['Springerendspiel', 'springer'],
+  pawnEndgame: ['Bauernendspiel', 'bauernendspiel', 'bauerendspiel'],
+  queenEndgame: ['Damenendspiel', 'dame'],
+  queenRookEndgame: ['Damen-Turm-Endspiel', 'dame und turm'],
+  rookEndgame: ['Turmendspiel', 'turm'],
+  endgame: ['Endspiel (alle)', 'endspiel (alle)'],
+  middlegame: ['Mittelspiel', 'mittelpartie'],
+  opening: ['Eröffnung', 'Eroeffnung', 'Eroffnung', 'eröffnung', 'eroeffnung'],
+  long: ['Lange Partie', 'lange partie'],
+  short: ['Kurze Partie', 'kurze partie'],
+  veryLong: ['Sehr lange Partie', 'sehr lange partie'],
+  oneMove: ['Ein Zug', 'ein zug'],
+  master: ['Meister-Niveau', 'meister', 'grossmeister'],
+  masterVsMaster: ['Meister gegen Meister', 'meister gegen meister'],
+  superGM: ['Super-GM', 'großmeister', 'grossmeister'],
+  equality: ['Gleichstand'],
+  advantage: ['Vorteil'],
+  exposedKing: ['Freistehender König', 'Freistehender Koenig', 'Freistehender Konig', 'freistehender könig'],
+  crushing: ['Überwältigende Überlegenheit', 'Überwaeltigende Überlegenheit', 'Überwaltigende Überlegenheit'],
+  castling: ['Rochade', 'rokade'],
+};
+
+/** Dasselbe fuer die Rubriken, damit "taktik" oder "endspiel" etwas findet. */
+export const GROUP_SEARCH_DE = {
+  mate: ['matt', 'mattmotive', 'matte', 'mattmuster'],
+  tactic: ['taktik', 'angriff', 'angriffsfigur', 'manoeuvre'],
+  defence: ['verteidigung', 'vermeidung', 'abwehr'],
+  endgame: ['endspiel', 'endpartie', 'endphase'],
+  phase: ['partiephase', 'spielphase', 'phase'],
+  other: ['sonstiges', 'verschiedenes'],
+};

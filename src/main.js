@@ -7,7 +7,7 @@
  * keine API, kein Konto und kein Internet.
  */
 
-import { GROUPS, label, groupOf } from './themes.js';
+import { GROUPS, label, groupOf, SEARCH_DE, GROUP_SEARCH_DE } from './themes.js';
 import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, estimateRaw, decodeSolv } from './reader.js';
 
 const $ = (id) => document.getElementById(id);
@@ -38,6 +38,7 @@ const el = {
   orderSeg: $('orderSeg'),
   solvSeg: $('solvSeg'),
   solvNote: $('solvNote'),
+  mateHint: $('mateHint'),
   rangeBox: $('rangeBox'),
   minRating: $('minRating'),
   maxRating: $('maxRating'),
@@ -273,7 +274,7 @@ function renderThemes(filter = '') {
 
   for (const group of GROUPS) {
     const inGroup = state.themes.filter(
-      (t) => t.group === group.id && (!needle || norm(t.label).includes(needle) || norm(t.id).includes(needle)),
+      (t) => t.group === group.id && (!needle || matches(t, needle)),
     );
     if (!inGroup.length) continue;
 
@@ -416,6 +417,44 @@ function updateModeCard() {
 }
 
 /**
+ * Hinweis bei "Mate in N".
+ *
+ * Ein Puzzle traegt immer nur ein mateInN - auf 6,1 Millionen Puzzles gibt es
+ * genau zwei, die zwei solcher Marken tragen. Wer "Mate in 1" waehlt, bekommt
+ * deshalb nie einen Matt in 5, und das sieht leicht nach einem Fehler aus. Das
+ * Theme "Mate (any)" enthaelt dagegen nachweislich alle mateIn1 bis mateIn5.
+ */
+const MATE_ANY = 'mate';
+
+function updateMateHint() {
+  const gewaehlt = [...state.selected];
+  const nurMateN = gewaehlt.length === 1 && /^mateIn[1-5]$/.test(gewaehlt[0]);
+  if (!nurMateN) {
+    el.mateHint.hidden = true;
+    return;
+  }
+  const anzahl = state.manifest?.themes[MATE_ANY]?.n || 0;
+  const n = gewaehlt[0].replace('mateIn', '');
+  el.mateHint.hidden = false;
+  el.mateHint.replaceChildren(
+    document.createTextNode(
+      `Only puzzles that mate in exactly ${n} move${n === '1' ? '' : 's'}. ` +
+        `For every mate, use "Mate (any)" (${compact.format(anzahl)} puzzles, ` +
+        `includes all mate in 1 to 5). `,
+    ),
+  );
+  const knopf = document.createElement('button');
+  knopf.type = 'button';
+  knopf.textContent = 'Use "Mate (any)"';
+  knopf.onclick = () => {
+    state.selected = new Set([MATE_ANY]);
+    renderThemes(el.themeSearch.value);
+    update();
+  };
+  el.mateHint.append(knopf);
+}
+
+/**
  * 532 von 2628 Theme-Paaren kommen in der Datenbank nie gemeinsam vor. Solche
  * Kombinationen liefern immer 0 Treffer - das steht schon im Manifest und muss
  * nicht erst durch Datenladen herausgefunden werden.
@@ -443,6 +482,7 @@ function update() {
   el.themeCount.textContent = count ? `${count} selected` : 'nothing selected';
   el.selInfo.textContent = count ? '' : 'Pick at least one theme';
   updateModeCard();
+  updateMateHint();
 
   const query = buildQuery();
   el.searchBtn.disabled = !(count > 0 && query.count > 0 && query.min <= query.max);
@@ -471,8 +511,13 @@ function update() {
         `AND stops at ${query.count} results: at least ${fmtBytes(min)}, at most ${fmtBytes(max)}` +
         (state.minSolv ? ` · solved ${state.minSolv.toLocaleString('en-US')}+` : '');
     } else {
+      // Nicht "about": bei ODER ist das die Obergrenze fuer das ganze Theme,
+      // die Suche bricht aber ab, sobald sie genug Treffer hat. "100 hardest
+      // mate in 1" laedt 4 kB aus einem Index von 5,5 MB - das vorher zu
+      // behaupten war schlicht falsch und verleicht zum Warten.
       el.estimate.textContent =
-        `Data for this search: about ${fmtBytes(estimateAll(state.manifest, query))}` +
+        `At most ${fmtBytes(estimateAll(state.manifest, query))} - the search stops ` +
+        `once it has ${query.count} puzzles, usually far less` +
         (state.minSolv ? ` · solved ${state.minSolv.toLocaleString('en-US')}+` : '');
     }
   } else {
@@ -509,9 +554,42 @@ function fmtBytes(n) {
   return (n / 1048576).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' MB';
 }
 
-/** Für die Themesuche: nur Buchstaben und Zahlen, kleingeschrieben. */
+/**
+ * Für die Themesuche: kleinschreiben, Umlaute auf ihren Grundlaut legen,
+ * alles andere wegräumen.
+ *
+ * Das Umlaut-Handling ist der eigentliche Punkt: wer "Rontgen" oder "Hangende"
+ * tippt statt "Röntgen" oder "Hängende", soll dasselbe finden. Ein blosses
+ * Entfernen der Umlaute würde "Röntgen" zu "rntgen" machen - und "Rontgen"
+ * passt dann nicht mehr darauf.
+ */
 function norm(s) {
-  return String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(s)
+    .toLowerCase()
+    .replace(/ä/g, 'a')
+    .replace(/ö/g, 'o')
+    .replace(/ü/g, 'u')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/** Prüft, ob ein Theme zum Suchbegriff passt - englisch oder deutsch. */
+function matches(theme, needle) {
+  if (norm(theme.label).includes(needle)) return true;
+  if (norm(theme.id).includes(needle)) return true;
+  // Der Rubrikenname gilt für alle Themes der Rubrik - so findet "endspiel"
+  // alle Endspiel-Themes und "taktik" alle Taktik-Themes.
+  const gruppe = GROUPS.find((g) => g.id === theme.group);
+  if (gruppe) {
+    if (norm(gruppe.label).includes(needle)) return true;
+    for (const wort of GROUP_SEARCH_DE[gruppe.id] || []) {
+      if (norm(wort).includes(needle)) return true;
+    }
+  }
+  for (const wort of SEARCH_DE[theme.id] || []) {
+    if (norm(wort).includes(needle)) return true;
+  }
+  return false;
 }
 
 function buildQuery() {
