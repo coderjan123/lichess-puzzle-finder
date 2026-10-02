@@ -13,6 +13,15 @@ import { loadManifest, runQuery, estimateBytes, isImpossiblePair, estimateAll, e
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'lpf.lastSearch.v1';
+
+// Das Abhaken von Puzzles ist wieder weg. Wer es benutzt hat, hat bis zu 5000
+// Puzzle-IDs im Speicher liegen, die niemand mehr braucht - die werden hier
+// einmal entfernt, sonst bleiben sie für immer.
+try {
+  localStorage.removeItem('lpf.ticked.v1');
+} catch {
+  /* kein Speicherzugriff - dann ist dort auch nichts zu loeschen */
+}
 const nf = new Intl.NumberFormat('en-US');
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
@@ -59,11 +68,6 @@ const el = {
   playFirst: $('playFirst'),
   copyIds: $('copyIds'),
   copyLink: $('copyLink'),
-  copyUnticked: $('copyUnticked'),
-  tickedBar: $('tickedBar'),
-  tickedCount: $('tickedCount'),
-  hideTicked: $('hideTicked'),
-  clearTicked: $('clearTicked'),
   snapshotNote: $('snapshotNote'),
   loading: $('loading'),
   loadingText: $('loadingText'),
@@ -81,7 +85,6 @@ const state = {
   minSolv: 0,
   results: [],
   abort: null,
-  hideTicked: false,
 };
 
 // ------------------------------------------------------------- QR-Ansicht
@@ -795,21 +798,6 @@ function renderResults() {
   const frag = document.createDocumentFragment();
   items.forEach((item, i) => {
     const li = document.createElement('li');
-    if (ticked.has(item.id)) li.classList.add('done');
-    // Abhaken als eigener Knopf: die Zeile selbst ist der Link zu lichess und
-    // soll nicht beim Abhaken verschluckt werden.
-    const tick = document.createElement('button');
-    tick.type = 'button';
-    tick.className = 'tick';
-    tick.setAttribute('aria-pressed', ticked.has(item.id) ? 'true' : 'false');
-    tick.setAttribute('aria-label', `Mark puzzle ${item.id} as done`);
-    tick.textContent = ticked.has(item.id) ? '✓' : '';
-    tick.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleTicked(item.id);
-      renderResults();
-    };
 
     const a = document.createElement('a');
     a.className = 'item';
@@ -826,19 +814,11 @@ function renderResults() {
     const flag = document.createElement('span');
     flag.className = 'flag';
     flag.textContent = '↗';
-    li.append(tick, a, flag);
-    if (!(state.hideTicked && ticked.has(item.id))) frag.append(li);
+    li.append(a, flag);
+    frag.append(li);
   });
   el.resultList.replaceChildren(frag);
 
-  // Abhak-Leiste
-  const anzahl = tickedInResults();
-  el.tickedBar.hidden = items.length === 0;
-  el.tickedCount.textContent = anzahl
-    ? `${anzahl} of ${items.length} ticked as done`
-    : `${items.length} puzzles · tick them off as you play`;
-
-  el.copyUnticked.disabled = items.length === 0 || tickedInResults() === 0;
   el.playFirst.disabled = items.length === 0;
   el.playFirst.textContent = `▶ Open on lichess (${items.length})`;
   el.copyIds.disabled = items.length === 0;
@@ -868,67 +848,6 @@ el.copyIds.onclick = () =>
   );
 
 el.copyLink.onclick = () => copyText(location.href, 'Link copied');
-
-// ------------------------------------------------- Puzzles abhaken
-
-/**
- * Welche Puzzles sind erledigt? Ein Satz von Puzzle-IDs im localStorage -
- * global, nicht pro Liste: wenn ein Puzzle einmal gelöst ist, ist es das auch
- * in einer anderen Liste. Gekappt, damit der Speicher nicht unbegrenzt wächst.
- */
-const TICKED = 'lpf.ticked.v1';
-const TICKED_MAX = 5000;
-let ticked = loadTicked();
-
-function loadTicked() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(TICKED) || '[]');
-    return new Set(Array.isArray(raw) ? raw : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveTicked() {
-  try {
-    const list = [...ticked];
-    localStorage.setItem(TICKED, JSON.stringify(list.slice(-TICKED_MAX)));
-  } catch {
-    /* egal - das Abhaken funktioniert auch ohne Speicherzugriff */
-  }
-}
-
-function toggleTicked(id) {
-  if (ticked.has(id)) ticked.delete(id);
-  else ticked.add(id);
-  saveTicked();
-}
-
-/** Anzahl der abgehakten Puzzles in der aktuellen Liste. */
-function tickedInResults() {
-  return state.results.reduce((n, item) => n + (ticked.has(item.id) ? 1 : 0), 0);
-}
-
-el.hideTicked.onclick = () => {
-  state.hideTicked = !state.hideTicked;
-  el.hideTicked.classList.toggle('on', state.hideTicked);
-  el.hideTicked.textContent = state.hideTicked ? 'Show all' : 'Hide ticked';
-  renderResults();
-};
-
-el.clearTicked.onclick = () => {
-  ticked.clear();
-  saveTicked();
-  renderResults();
-};
-
-el.copyUnticked.onclick = () => {
-  const offen = state.results.filter((x) => !ticked.has(x.id));
-  copyText(
-    offen.map((x) => x.id).join('\n'),
-    `Copied ${offen.length} unsolved IDs`,
-  );
-};
 
 // ------------------------------------------------- Letzte Suche merken
 

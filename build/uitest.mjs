@@ -490,77 +490,7 @@ step('14 · Spielzahl: Reihenfolge und Schwelle');
   await sctx.close();
 }
 
-step('15 · Puzzles abhaken');
-{
-  const tctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  const tp = await tctx.newPage();
-  tp.setDefaultTimeout(90_000);
-  await tp.goto(BASE, { waitUntil: 'load' });
-  await waitForApp(tp);
-
-  await tp.fill('#themeSearch', 'mateIn3');
-  await tp.locator('#themeList .chip[data-theme="mateIn3"]').click();
-  await tp.fill('#themeSearch', '');
-  await tp.fill('#count', '20');
-  await tp.click('#searchBtn');
-  await tp.waitForSelector('#viewResults:not([hidden])');
-
-  const ids = await tp.$$eval('#resultList .id', (n) => n.map((x) => x.textContent.trim()));
-  const leerZaehler = ((await tp.textContent('#tickedCount')) || '').trim();
-  /0 of 20|tick them off/.test(leerZaehler)
-    ? ok(`Anfangszustand: "${leerZaehler}"`)
-    : bad(`unerwarteter Anfangszustand: "${leerZaehler}"`);
-
-  // Zwei Zeilen abhaken
-  await tp.locator('#resultList li .tick').nth(0).click();
-  await tp.locator('#resultList li .tick').nth(2).click();
-  const zaehler = ((await tp.textContent('#tickedCount')) || '').trim();
-  /2 of 20/.test(zaehler) ? ok(`Zähler: "${zaehler}"`) : bad(`Zähler falsch: "${zaehler}"`);
-  (await tp.locator('#resultList li.done').count()) === 2
-    ? ok('zwei Zeilen als erledigt markiert')
-    : bad(`${await tp.locator('#resultList li.done').count()} Zeilen markiert`);
-
-  // Reload: muss erhalten bleiben
-  await tp.reload({ waitUntil: 'load' });
-  await tp.waitForSelector('#viewResults:not([hidden])', { timeout: 60_000 });
-  const danach = ((await tp.textContent('#tickedCount')) || '').trim();
-  /2 of 20/.test(danach) ? ok(`nach Reload erhalten: "${danach}"`) : bad(`nach Reload verloren: "${danach}"`);
-
-  // Zeile ausblenden
-  await tp.click('#hideTicked');
-  const sichtbar = await tp.locator('#resultList li').count();
-  sichtbar === 18
-    ? ok('"Hide ticked" blendet die zwei erledigten aus (18 Zeilen)')
-    : bad(`"Hide ticked" zeigt ${sichtbar} statt 18 Zeilen`);
-  await tp.click('#hideTicked');
-
-  // Nur ungelöste kopieren
-  await tp.click('#copyUnticked');
-  await tp.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 20_000 });
-  const meldung = ((await tp.textContent('#toast')) || '').trim();
-  /Copied 18 unsolved IDs/.test(meldung)
-    ? ok(`Meldung: "${meldung}"`)
-    : bad(`unerwartete Meldung: "${meldung}"`);
-
-  // Abhaken und Leeren
-  await tp.click('#clearTicked');
-  const geleert = ((await tp.textContent('#tickedCount')) || '').trim();
-  /0 of 20|tick them off/.test(geleert)
-    ? ok('Clear setzt alles zurück')
-    : bad(`Clear wirkte nicht: "${geleert}"`);
-  (await tp.locator('#resultList li.done').count()) === 0
-    ? ok('keine Zeile mehr als erledigt markiert')
-    : bad('es sind noch Zeilen markiert');
-
-  // Ein Klick auf den Knopf darf das Puzzle nicht bei lichess oeffnen.
-  await tp.locator('#resultList li .tick').nth(1).click();
-  (await tp.locator('#resultList li.done').count()) === 1
-    ? ok('Abhaken ohne Sprung zu lichess')
-    : bad('Abhaken hat nicht funktioniert');
-  await tctx.close();
-}
-
-step('16 · Deutsche Suchbegriffe und Mate-Hinweis');
+step('15 · Deutsche Suchbegriffe und Mate-Hinweis');
 {
   const dctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const dp = await dctx.newPage();
@@ -655,7 +585,7 @@ step('16 · Deutsche Suchbegriffe und Mate-Hinweis');
   await dctx.close();
 }
 
-step('17 · QR-Code der Adresse');
+step('16 · QR-Code der Adresse');
 {
   const qctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const qp = await qctx.newPage();
@@ -762,7 +692,7 @@ step('17 · QR-Code der Adresse');
   await qctx.close();
 }
 
-step('18 · Konsole');
+step('17 · Konsole');
 const realErrors = consoleErrors.filter((e) => !/favicon|Content-Security|net::ERR_FILE/i.test(e));
 realErrors.length === 0 ? ok('keine Konsolenfehler') : bad(`Konsolenfehler: ${realErrors.slice(0, 5).join(' | ')}`);
 
