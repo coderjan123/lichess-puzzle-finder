@@ -198,12 +198,6 @@ h2 {
   display: block;
 }
 
-.qr-hint {
-  color: var(--fg-dim);
-  font-size: 0.85rem;
-  margin: 0.8rem 0 0.3rem;
-}
-
 .qr-warn {
   color: var(--warn);
   font-size: 0.8rem;
@@ -238,12 +232,6 @@ h2 {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
-}
-
-.topmeta {
-  color: var(--fg-dim);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .icon-btn {
@@ -621,12 +609,6 @@ button.big {
   font-size: 0.85rem;
 }
 
-.results .flag {
-  padding: 0 0.8rem;
-  font-size: 0.8rem;
-  color: var(--fg-dim);
-}
-
 #resultInfo {
   font-size: 0.92rem;
 }
@@ -730,7 +712,7 @@ code {
 
 .resume-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.4rem;
   flex-shrink: 0;
 }

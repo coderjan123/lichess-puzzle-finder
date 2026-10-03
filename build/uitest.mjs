@@ -110,7 +110,12 @@ const chipCount = await page.locator('.chip').count();
 const themeCount = Object.keys(manifest.themes).length;
 chipCount === themeCount ? ok(`${chipCount} Themes angezeigt`) : bad(`${chipCount} statt ${themeCount} Themes`);
 (await page.locator('#statusCard').isHidden()) ? ok('Index geladen') : bad('Ladeanzeige bleibt sichtbar');
-ok(`Kopfzeile: ${(await page.locator('#topMeta').textContent()).trim()}`);
+// Die Kopfzeile traegt nur noch den Titel und den QR-Knopf. Zaehlertexte
+// ("6.1M Puzzles - 73 Themes") sind entfernt und duerfen nicht zurueckkommen.
+const kopfRest = await page.locator('.topbar').innerText();
+!/puzzles|themes/i.test(kopfRest)
+  ? ok(`Kopfzeile ohne Metazeile: "${kopfRest.trim().replace(/\s+/g, ' ')}"`)
+  : bad(`Kopfzeile traegt wieder einen Metatext: "${kopfRest.trim()}"`);
 await page.screenshot({ path: `${shots}/01-start.png`, fullPage: true });
 
 step('2 · Theme suchen und auswählen');
@@ -138,7 +143,13 @@ const expected = await runQuery(manifest, { themes: ['mateIn2'], mode: 'OR', ord
 ids.length === expected.items.length && ids.every((v, i) => v === expected.items[i].id)
   ? ok(`25 Treffer, identisch zum Daten-Reader (${ids[0]} … ${ids[24]})`)
   : bad(`Treffer weichen ab: ${ids.slice(0, 3)} vs ${expected.items.slice(0, 3).map((x) => x.id)}`);
-ok(`Ergebniszeile: ${(await page.locator('#resultInfo').textContent()).replace(/\s+/g, ' ').trim().slice(0, 80)}`);
+const info = (await page.locator('#resultInfo').textContent()).replace(/\s+/g, ' ').trim();
+ok(`Ergebniszeile: ${info.slice(0, 80)}`);
+// "25 puzzles · hardest first" ist entfernt. Zaehler und Reihenfolge stehen
+// an anderer Stelle (Knopf "Open on lichess (25)", Reihenfolgeschalter).
+!/puzzles\s*[·•]/i.test(info) && !/hardest first/i.test(info)
+  ? ok('Ergebniszeile ohne "N Puzzles · hardest first"')
+  : bad(`Ergebniszeile traegt den Zaehlertext wieder: "${info.slice(0, 60)}"`);
 await page.screenshot({ path: `${shots}/02-ergebnis.png`, fullPage: true });
 
 step('4 · Links auf lichess');
@@ -213,6 +224,16 @@ await page.click('#resumeBtn');
 await page.waitForSelector('#viewResults:not([hidden])');
 const resumed = await page.$$eval('#resultList li', (n) => n.length);
 resumed === easyList.length ? ok(`Liste aus dem Speicher wiederhergestellt (${resumed} Zeilen)`) : bad(`nur ${resumed} Zeilen`);
+
+// "Open list" und "Discard" stehen nebeneinander, nicht uebereinander.
+const knoepfe = await page.evaluate(() => {
+  const a = document.querySelector('#resumeBtn').getBoundingClientRect();
+  const b = document.querySelector('#resumeDrop').getBoundingClientRect();
+  return { ay: a.y, by: b.y, ax: a.x, ab: a.right, bx: b.x };
+});
+Math.abs(knoepfe.ay - knoepfe.by) < 4 && knoepfe.bx >= knoepfe.ab - 1
+  ? ok('die beiden Knöpfe stehen nebeneinander')
+  : bad(`Knöpfe nicht nebeneinander: ${JSON.stringify(knoepfe)}`);
 await page.click('#resumeDrop').catch(() => {});
 
 step('10 · Hinweis bei file://');
@@ -447,14 +468,32 @@ step('14 · Spielzahl: Reihenfolge und Schwelle');
     ? ok(`"Most solved first" liefert dieselbe Liste wie der Reader (${istSolv.length} IDs)`)
     : bad(`"Most solved first" weicht ab: ${istSolv.slice(0, 3).join(' ')} …`);
 
-  // Die Spielzahl steht in der Zeile und ist nicht leer.
-  const anzeigen = await sp.$$eval('#resultList .solv', (n) => n.map((x) => x.textContent.trim()));
-  anzeigen.length === 30 && anzeigen.every((t) => t.length > 0)
-    ? ok(`Spielzahl in jeder Zeile, z. B. ${anzeigen.slice(0, 4).join(' · ')}`)
+  // Die Spielzahl steht nicht mehr in der Zeile, haengt aber als data-solv am
+  // Knoten. Geprueft wird die Eigenschaft, die vorher nur beschriftet wurde:
+  // "Most solved first" liefert absteigende Spielzahlen.
+  const anzeigen = await sp.$$eval('#resultList .item', (n) =>
+    n.map((x) => x.dataset.solv),
+  );
+  const zahlen = anzeigen.map((t) => Number(t));
+  anzeigen.length === 30 && zahlen.every(Number.isFinite)
+    ? ok(`Spielzahl an jeder Zeile (data-solv), z. B. ${zahlen.slice(0, 4).join(' ')}`)
     : bad(`Spielzahl fehlt: ${JSON.stringify(anzeigen.slice(0, 4))}`);
-  /^~[\d.]/.test(anzeigen[0] || '')
-    ? ok('mit "~" gekennzeichnet (die Kodierung ist logarithmisch)')
-    : bad(`keine Kennzeichnung als Näherung: "${anzeigen[0]}"`);
+  zahlen.every((v, i) => i === 0 || zahlen[i - 1] >= v)
+    ? ok('absteigend sortiert, wie "Most solved first" verspricht')
+    : bad(`nicht absteigend: ${zahlen.slice(0, 6).join(' ')}`);
+  // Keine sichtbare Spielzahl und kein Pfeil mehr in der Zeile. Geprueft wird
+// die Struktur, nicht der Text: die drei Spalten stehen ohne Leerzeichen
+// nebeneinander im textContent.
+const zeilen = await sp.$$eval('#resultList .item', (n) =>
+  n.map((x) => ({
+    text: x.textContent.replace(/\s+/g, ' ').trim(),
+    kinder: [...x.children].map((c) => c.className).join(','),
+  })),
+);
+const schmal = zeilen.every((z) => z.kinder === 'pos,rating,id' && !/[~↗]/.test(z.text));
+schmal
+    ? ok(`Zeile zeigt nur Rang, Rating und Kennung (${zeilen[0]?.text})`)
+    : bad(`unerwartete Spalten: ${JSON.stringify(zeilen.slice(0, 3))}`);
 
   // Schwelle
   await sp.click('#backBtn');
@@ -664,6 +703,12 @@ step('16 · QR-Code der Adresse, auf jeder Ansicht');
   r.module < r.erwartet
     ? ok('Finder-, Zeit- und Ausrichtungsmuster vorhanden (nicht alle Module dunkel)')
     : bad('verdächtig: jedes zweite Modul ist dunkel');
+
+  // Der Erklaerungstext im QR-Fenster ist entfernt; Code und Adresse bleiben.
+  const qrText = await qp.locator('#qrOverlay').innerText();
+  !/camera|phone camera/i.test(qrText)
+    ? ok(`kein Erklaerungstext mehr im QR-Fenster ("${qrText.trim().replace(/\s+/g, ' ')}")`)
+    : bad(`QR-Fenster hat wieder einen Hinweistext: "${qrText.trim()}"`);
 
   await qp.keyboard.press('Escape');
   await qp.waitForSelector('#qrOverlay', { state: 'hidden' });

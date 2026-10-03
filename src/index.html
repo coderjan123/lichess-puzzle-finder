@@ -18,7 +18,6 @@
     <header class="topbar">
       <button id="backBtn" class="icon-btn" type="button" aria-label="Back" hidden>‹</button>
       <h1 id="viewTitle">Lichess Puzzle Finder</h1>
-      <span id="topMeta" class="topmeta"></span>
       <button
         id="qrBtn"
         class="qr-btn"
@@ -150,7 +149,6 @@
           <button type="button" id="copyIds">Copy IDs</button>
           <button type="button" id="copyLink">Copy link</button>
         </div>
-        <p class="hint center">Every row opens the puzzle on lichess in a new tab.</p>
         <ol class="results" id="resultList"></ol>
         <p class="hint center" id="snapshotNote"></p>
         <p class="hint center">
@@ -178,7 +176,6 @@
     <div class="qr-overlay" id="qrOverlay" hidden>
       <div class="qr-box" role="dialog" aria-modal="true" aria-label="QR code of this page">
         <div id="qrCode" class="qr-code"></div>
-        <p class="qr-hint">Point a phone camera at this code to open the same page there.</p>
         <p class="qr-warn" id="qrWarn" hidden></p>
         <p class="qr-url" id="qrUrl"></p>
         <div class="qr-actions">

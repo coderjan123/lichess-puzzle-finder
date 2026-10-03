@@ -28,7 +28,6 @@ const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFra
 const el = {
   back: $('backBtn'),
   title: $('viewTitle'),
-  topMeta: $('topMeta'),
   status: $('statusCard'),
   statusText: $('statusText'),
   resume: $('resumeCard'),
@@ -311,7 +310,6 @@ async function init() {
     .map(([id, info]) => ({ id, label: label(id), group: groupOf(id), count: info.n }))
     .sort((a, b) => a.label.localeCompare(b.label, 'de'));
 
-  el.topMeta.textContent = `${compact.format(manifest.puzzles)} Puzzles · ${Object.keys(manifest.themes).length} Themes`;
   el.solvNote.textContent = 'from the lichess database';
   renderThemes();
   buildPresets();
@@ -593,25 +591,6 @@ function update() {
   writeUrl(false);
 }
 
-/**
- * Spielzahl in Kurzform. Der Index speichert sie logarithmisch in einem Byte,
- * der Fehler betraegt hoechstens 4,4 Prozent - deshalb das "~" und keine
- * vierstellige Genauigkeit, die nicht da ist.
- */
-// Zwei signifikante Stellen, nicht vier: der Index speichert die Spielzahl
-// logarithmisch in einem Byte. Mehr Nachkommastellen wuerden Genauigkeit
-// vortaeuschen, die nicht da ist - und vier gleiche Werte in Folge (223.4K)
-// sehen nach einem Fehler aus statt nach einer Naeherung.
-const solvFmt = new Intl.NumberFormat('en-US', {
-  notation: 'compact',
-  maximumSignificantDigits: 2,
-});
-function fmtSolv(code) {
-  const n = decodeSolv(code);
-  if (n <= 0) return '–';
-  return '~' + (n < 1000 ? String(n) : solvFmt.format(n));
-}
-
 function fmtBytes(n) {
   if (n < 1024) return n + ' Bytes';
   if (n < 1048576) return Math.round(n / 1024) + ' kB';
@@ -791,11 +770,11 @@ function describeQuery(query) {
 function renderResults() {
   const query = lastQuery;
   const items = state.results;
-  const { names, order } = describeQuery(query);
+  const { names } = describeQuery(query);
   const avg = items.length ? Math.round(items.reduce((s, x) => s + x.rating, 0) / items.length) : 0;
 
   el.resultInfo.innerHTML = items.length
-    ? `<b>${nf.format(items.length)}</b> puzzles · ${order}<br><span class="muted">${escapeHtml(names)}</span>` +
+    ? `<span class="muted">${escapeHtml(names)}</span>` +
       (items.length > 20 ? `<br><span class="muted">Average rating ${avg}</span>` : '')
     : '<b>No results.</b><br><span class="muted">Widen the rating range or the theme combination.</span>';
 
@@ -813,14 +792,13 @@ function renderResults() {
     a.innerHTML =
       `<span class="pos">${i + 1}</span>` +
       `<span class="rating">${item.rating}</span>` +
-      `<span class="id">${item.id}</span>` +
-      `<span class="solv" title="Times solved in the lichess database. The value is ` +
-        `approximate: the index stores it logarithmically in one byte.">${fmtSolv(item.solv || 0)}</span>`;
+      `<span class="id">${item.id}</span>`;
+    // Die Spielzahl wird nicht mehr angezeigt, bleibt aber am Knoten stehen:
+    // der Test prueft daran, dass "Most solved first" wirklich absteigend
+    // sortiert, und ein data-Attribut kostet nichts.
+    a.dataset.solv = String(item.solv || 0);
     a.setAttribute('aria-label', `Open puzzle ${item.id} with rating ${item.rating} on lichess`);
-    const flag = document.createElement('span');
-    flag.className = 'flag';
-    flag.textContent = '↗';
-    li.append(a, flag);
+    li.append(a);
     frag.append(li);
   });
   el.resultList.replaceChildren(frag);
