@@ -7,9 +7,11 @@
  * ist ein Kontakt nach draußen, den es sonst nicht gäbe.
  *
  * Umfang: Byte-Modus (URLs sind ASCII), Fehlerkorrekturstufe M, Version 1 bis
- * 10. Das fasst 216 Zeichen - eine geteilte Adresse dieses Projekts liegt bei
- * rund 150. Längere Texte ergeben null, und der Aufrufer weist das ab, statt
- * einen unlesbaren Code zu erzeugen.
+ * 20. Das fasst 666 Zeichen. Wichtig ist die zweite Zahl: eine Suche mit vielen
+ * Themen ergibt eine längere Adresse, und mit Version 1 bis 10 (216 Zeichen)
+ * fiel der Code ab der vierzehnten Auswahl einfach aus - die Option war dann
+ * weg, ohne dass man ihr beim Wegklicken folgt. Längere Texte ergeben null,
+ * und der Aufrufer weist das ab, statt einen unlesbaren Code zu erzeugen.
  *
  * Geprüft wird das Ergebnis nicht mit einem zweiten Encoder, sondern mit einem
  * echten Decoder (jsQR, nur in build/): was der Decoder zurückgibt, muss der
@@ -68,17 +70,46 @@ function eccFor(data, degree) {
 //   ecc    = Fehlerkorrekturworte je Block
 
 const SPEC = {
-  1: { daten: 16, bloecke: [[1, 16]], ecc: 10 },
-  2: { daten: 28, bloecke: [[1, 28]], ecc: 16 },
-  3: { daten: 44, bloecke: [[1, 44]], ecc: 26 },
-  4: { daten: 64, bloecke: [[2, 32]], ecc: 18 },
-  5: { daten: 86, bloecke: [[2, 43]], ecc: 24 },
-  6: { daten: 108, bloecke: [[4, 27]], ecc: 16 },
-  7: { daten: 124, bloecke: [[4, 31]], ecc: 18 },
-  8: { daten: 154, bloecke: [[2, 38], [2, 39]], ecc: 22 },
-  9: { daten: 182, bloecke: [[3, 36], [2, 37]], ecc: 22 },
-  10: { daten: 216, bloecke: [[4, 43], [1, 44]], ecc: 26 },
+  1: { gesamt: 26, daten: 16, bloecke: [[1, 16]], ecc: 10 },
+  2: { gesamt: 44, daten: 28, bloecke: [[1, 28]], ecc: 16 },
+  3: { gesamt: 70, daten: 44, bloecke: [[1, 44]], ecc: 26 },
+  4: { gesamt: 100, daten: 64, bloecke: [[2, 32]], ecc: 18 },
+  5: { gesamt: 134, daten: 86, bloecke: [[2, 43]], ecc: 24 },
+  6: { gesamt: 172, daten: 108, bloecke: [[4, 27]], ecc: 16 },
+  7: { gesamt: 196, daten: 124, bloecke: [[4, 31]], ecc: 18 },
+  8: { gesamt: 242, daten: 154, bloecke: [[2, 38], [2, 39]], ecc: 22 },
+  9: { gesamt: 292, daten: 182, bloecke: [[3, 36], [2, 37]], ecc: 22 },
+  10: { gesamt: 346, daten: 216, bloecke: [[4, 43], [1, 44]], ecc: 26 },
+  11: { gesamt: 404, daten: 254, bloecke: [[1, 50], [4, 51]], ecc: 30 },
+  12: { gesamt: 466, daten: 290, bloecke: [[6, 36], [2, 37]], ecc: 22 },
+  13: { gesamt: 532, daten: 334, bloecke: [[8, 37], [1, 38]], ecc: 22 },
+  14: { gesamt: 581, daten: 365, bloecke: [[4, 40], [5, 41]], ecc: 24 },
+  15: { gesamt: 655, daten: 415, bloecke: [[5, 41], [5, 42]], ecc: 24 },
+  16: { gesamt: 733, daten: 453, bloecke: [[7, 45], [3, 46]], ecc: 28 },
+  17: { gesamt: 815, daten: 507, bloecke: [[10, 46], [1, 47]], ecc: 28 },
+  18: { gesamt: 901, daten: 563, bloecke: [[9, 43], [4, 44]], ecc: 26 },
+  19: { gesamt: 991, daten: 627, bloecke: [[3, 44], [11, 45]], ecc: 26 },
+  20: { gesamt: 1085, daten: 669, bloecke: [[3, 41], [13, 42]], ecc: 26 },
 };
+
+// Jede Zeile muss in sich stimmen: Daten plus Fehlerkorrektur ergeben genau die
+// Gesamtzahl der Codeworte, und die Bloecke muessen die Datenwoerter genau
+// einmal abdecken. Beim Erweitern auf Version 11 bis 20 waren sechs von zehn
+// Zeilen falsch - aus dem Gedaechtnis ergaenzt und mit sich selbst unvereinbar.
+// Diese Pruefung faellt so einen Fehler sofort auf, statt still einen
+// unlesbaren Code zu erzeugen, den erst ein Decoder beim Scannen bemerkt.
+for (const [version, spec] of Object.entries(SPEC)) {
+  const bloecke = spec.bloecke.reduce((n, [anzahl, groesse]) => n + anzahl * groesse, 0);
+  if (bloecke !== spec.daten) {
+    throw new Error(`qr.js: Version ${version} - Bloecke decken ${bloecke} Datenwoerter ab, erwartet ${spec.daten}`);
+  }
+  const ecc = spec.bloecke.reduce((n, [anzahl]) => n + anzahl, 0) * spec.ecc;
+  if (spec.daten + ecc !== spec.gesamt) {
+    throw new Error(
+      `qr.js: Version ${version} - ${spec.daten} + ${ecc} ergibt ${spec.daten + ecc} statt ${spec.gesamt}`,
+    );
+  }
+}
 
 /** Mittelpunkte der Ausrichtungsmuster je Version. */
 const ALIGN = {
@@ -92,6 +123,16 @@ const ALIGN = {
   8: [6, 24, 42],
   9: [6, 26, 46],
   10: [6, 28, 50],
+  11: [6, 30, 54],
+  12: [6, 32, 58],
+  13: [6, 34, 62],
+  14: [6, 26, 46, 66],
+  15: [6, 26, 48, 70],
+  16: [6, 26, 50, 74],
+  17: [6, 30, 54, 78],
+  18: [6, 30, 56, 82],
+  19: [6, 30, 58, 86],
+  20: [6, 34, 62, 90],
 };
 
 const ECC_BITS = 0b00; // M
@@ -370,7 +411,7 @@ function setzeFormat(m, maske) {
 export function qrMatrix(text) {
   const bytes = new TextEncoder().encode(String(text));
   let version = 0;
-  for (let v = 1; v <= 10; v++) {
+  for (let v = 1; v <= 20; v++) {
     const spec = SPEC[v];
     const laengeBits = v < 10 ? 8 : 16;
     if (4 + laengeBits + bytes.length * 8 <= spec.daten * 8) {

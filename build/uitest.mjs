@@ -585,7 +585,7 @@ step('15 · Deutsche Suchbegriffe und Mate-Hinweis');
   await dctx.close();
 }
 
-step('16 · QR-Code der Adresse');
+step('16 · QR-Code der Adresse, auf jeder Ansicht');
 {
   const qctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const qp = await qctx.newPage();
@@ -689,7 +689,121 @@ step('16 · QR-Code der Adresse');
   await qp.mouse.click(4, 4);
   await qp.waitForSelector('#qrOverlay', { state: 'hidden' });
   ok('Klick daneben schließt');
+
+  // ---------------------------------------------------------------------
+  // Der Knopf muss auf JEDER Ansicht oben rechts erreichbar sein - nicht nur
+  // auf der Startseite und der Ergebnisliste. Geprüft wird nicht nur, dass er
+  // da ist, sondern dass auch wirklich er obenauf liegt: liegt ein
+  // Ladebildschirm darüber, ist er vorhanden, aber nicht erreichbar.
+  const liegtObenauf = () =>
+    qp.evaluate(() => {
+      const btn = document.getElementById('qrBtn');
+      const box = btn.getBoundingClientRect();
+      const oben = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return {
+        ok: btn === oben || btn.contains(oben),
+        versteckt: btn.hidden,
+        imBild: box.top >= 0 && box.bottom <= innerHeight && box.right <= innerWidth,
+        // 24px, nicht 12: die Kopfzeile hat selbst 0.9rem Innenabstand,
+        // der Knopf sitzt also nicht buendig an der Fensterkante.
+        rechts: Math.round(innerWidth - box.right) <= 24,
+        oben: Math.round(box.top) <= 12,
+      };
+    });
+
+  const pruefeEcke = async (name) => {
+    const o = await liegtObenauf();
+    o.ok && !o.versteckt && o.imBild && o.rechts && o.oben
+      ? ok(`${name}: oben rechts erreichbar`)
+      : bad(`${name}: nicht erreichbar (${JSON.stringify(o)})`);
+  };
+
+  await qp.click('.topbar .icon-btn');
+  await qp.waitForSelector('#viewHome:not([hidden])');
+  await pruefeEcke('Startseite');
+
+  await qp.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await qp.waitForTimeout(200);
+  await pruefeEcke('Startseite, unten gescrollt');
+  await qp.evaluate(() => window.scrollTo(0, 0));
+
+  // Während der Suche liegt der Ladebildschirm über allem - der Knopf muss
+  // trotzdem obenauf bleiben, sonst fehlt die Option genau in diesem Moment.
+  const waehle = async (theme) => {
+    const chip = qp.locator(`.chip[data-theme="${theme}"]`);
+    if (!(await chip.evaluate((n) => n.classList.contains('on')))) await chip.click();
+  };
+  await waehle('mateIn3');
+  await qp.click('#searchBtn');
+  await qp.waitForSelector('#loading:not([hidden])');
+  await pruefeEcke('Ladebildschirm während der Suche');
+  await qp.click('#qrBtn');
+  await qp.waitForSelector('#qrOverlay:not([hidden])');
+  await qp.waitForTimeout(150);
+  r = await liesCode();
+  r.gelesen === r.jetzt
+    ? ok(`auch im Ladebildschirm zeigt der Code die Adresse (${r.gelesen})`)
+    : bad(`im Ladebildschirm ergibt der Code "${r.gelesen}" statt "${r.jetzt}"`);
+  await qp.screenshot({ path: `${shots}/14-qr-ladebildschirm.png` });
+  await qp.keyboard.press('Escape');
+  await qp.waitForSelector('#qrOverlay', { state: 'hidden' });
+  await qp.waitForSelector('#viewResults:not([hidden])', { timeout: 90_000 });
+  await qp.waitForFunction(() => document.getElementById('loading').hidden);
+  await pruefeEcke('Ergebnisliste');
+
+  // Die Regression, die den Anlass gab: eine UND-Suche mit vielen Themen ergibt
+  // eine Adresse von rund 250 Zeichen. Mit dem alten Encoder (Version 1 bis 10,
+  // 216 Zeichen) kam dort gar kein Code mehr - nur eine Meldung.
+  //
+  // Bewusst ueber die Adresse und nicht ueber die Suche: bei 16 Themen im UND
+  // gibt es Paare, die nie gemeinsam vorkommen, dann bleibt die Seite auf der
+  // Startseite. Der Code haengt aber allein an der Adresse, also wird genau die
+  // geprueft - unabhaengig davon, ob die Kombination Treffer hat.
+  const vieleThemen = [
+    'mateIn3', 'backRankMate', 'short', 'sacrifice', 'crushing', 'fork', 'doubleCheck',
+    'pin', 'discoveredAttack', 'bishopEndgame', 'rookEndgame', 'queenEndgame', 'pawnEndgame',
+    'mateIn1', 'mateIn2', 'attraction',
+  ];
+  const langeAdresse = `#/results?t=${vieleThemen.join(',')}&m=AND&o=hardest&n=5000&v=100000`;
+  await qp.goto(BASE + langeAdresse, { waitUntil: 'load' });
+  await waitForApp(qp);
+  await qp.waitForFunction(() => !document.getElementById('loading').hidden, null, { timeout: 30_000 })
+    .catch(() => {});
+  await qp.waitForFunction(() => document.getElementById('loading').hidden, null, { timeout: 90_000 });
+  await pruefeEcke(`Adresse mit ${vieleThemen.length} Themes`);
+  await qp.click('#qrBtn');
+  await qp.waitForSelector('#qrOverlay:not([hidden])');
+  await qp.waitForTimeout(150);
+  await qp.screenshot({ path: `${shots}/15-qr-viele-themen.png` });
+  r = await liesCode();
+  const laenge = (r.jetzt || '').length;
+  r.gelesen === r.jetzt && laenge > 216
+    ? ok(`${vieleThemen.length} Themes UND, ${laenge} Zeichen Adresse: Code ${r.groesse}×${r.groesse} wird gelesen`)
+    : bad(`${laenge} Zeichen: gelesen "${r.gelesen}", erwartet "${r.jetzt}"`);
+  (r.groesse || 0) > 57
+    ? ok(`Adresse mit ${laenge} Zeichen braucht QR-Version über 10 (${r.groesse} statt 57 Module)`)
+    : bad(`Adresse ${laenge} Zeichen passt noch in die alte Grenze - der Fall ist nicht mehr abgedeckt`);
   await qctx.close();
+
+  // Der file://-Hinweis ist auch eine Seite: der Knopf bleibt sichtbar, sagt
+  // aber, dass eine Datei-Adresse auf keinem anderen Gerät zu öffnen ist.
+  const fctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const fp = await fctx.newPage();
+  fp.setDefaultTimeout(90_000);
+  await fp.goto('file://' + path.join(repo, 'docs', 'index.html'), { waitUntil: 'load' });
+  await fp.waitForSelector('#fileHint:not([hidden])');
+  (await fp.locator('#qrBtn').isVisible())
+    ? ok('file://-Hinweis: QR-Knopf ebenfalls sichtbar')
+    : bad('file://-Hinweis: QR-Knopf versteckt');
+  await fp.click('#qrBtn');
+  await fp.waitForSelector('#qrOverlay:not([hidden])');
+  await fp.waitForTimeout(150);
+  await fp.screenshot({ path: `${shots}/16-qr-datei.png` });
+  const warnung = ((await fp.textContent('#qrWarn')) || '').trim();
+  /no other device can open it/i.test(warnung)
+    ? ok(`Warnung bei Datei-Adresse: "${warnung.slice(0, 56)}…"`)
+    : bad(`keine Warnung bei Datei-Adresse: "${warnung}"`);
+  await fctx.close();
 }
 
 step('17 · Konsole');

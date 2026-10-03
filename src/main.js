@@ -54,6 +54,7 @@ const el = {
   qrCode: $('qrCode'),
   qrUrl: $('qrUrl'),
   qrCopy: $('qrCopy'),
+  qrWarn: $('qrWarn'),
   qrClose: $('qrClose'),
   rangeBox: $('rangeBox'),
   minRating: $('minRating'),
@@ -111,6 +112,15 @@ function qrOeffnen() {
   }
   el.qrCode.innerHTML = svg;
   el.qrUrl.textContent = adresse;
+  // Eine Datei-Adresse kann kein anderes Geraet oeffnen. Der Knopf bleibt
+  // trotzdem sichtbar - die Option soll es ueberall geben -, aber die Ansage
+  // sagt, was daran nicht stimmt, statt es zu verschweigen.
+  const fremd = !/^https?:$/.test(location.protocol);
+  el.qrWarn.hidden = !fremd;
+  if (fremd) {
+    el.qrWarn.textContent =
+      'This is a local file address. No other device can open it - serve the page over http first.';
+  }
   el.qrOverlay.hidden = false;
   el.qrClose.focus();
 }
@@ -130,10 +140,6 @@ el.qrCopy.onclick = () => copyText(location.href, 'Address copied');
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !el.qrOverlay.hidden) qrSchliessen();
 });
-
-// Bei file:// zeigt der QR-Code auf einen Dateipfad, den ein anderes Geraet
-// nicht oeffnen kann. Dann lieber gar nicht anbieten.
-if (location.protocol === 'file:') el.qrBtn.hidden = true;
 
 // -------------------------------------------------- Router und Suchzustand
 

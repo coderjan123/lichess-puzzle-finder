@@ -14,6 +14,7 @@
   --accent-2: #7cb342;
   --accent-fg: #fff;
   --danger: #c62828;
+  --warn: #e0a33c;
   --board-light: #b0a798;
   --board-dark: #7b6c5c;
   --radius: 12px;
@@ -30,6 +31,7 @@
     --fg: #1c1b18;
     --fg-dim: #5f5c53;
     --accent: #629924;
+    --warn: #8a5a12;
     --shadow: 0 1px 6px rgb(0 0 0 / 0.12);
   }
 }
@@ -111,7 +113,10 @@ h2 {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  /* Ueber dem Ladebildschirm (50), unter dem QR-Fenster (60). Sonst waere der
+     QR-Knopf ausgerechnet waehrend der Suche nicht erreichbar - also genau
+     dann, wenn man die Adresse an ein anderes Geraet schicken will. */
+  z-index: 55;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -197,6 +202,12 @@ h2 {
   color: var(--fg-dim);
   font-size: 0.85rem;
   margin: 0.8rem 0 0.3rem;
+}
+
+.qr-warn {
+  color: var(--warn);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
 }
 
 .qr-url {

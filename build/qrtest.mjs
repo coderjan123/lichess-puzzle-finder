@@ -46,6 +46,18 @@ const texte = [
   'x'.repeat(50),
   'https://example.org/' + 'pfad-mit-langen-woertern-und-zahlen-1234567890/'.repeat(3),
   'ümläute-und-ß',
+  // Die Adressen, die im Betrieb am längsten werden: viele Themen in der
+  // UND-Suche. Mit Version 1 bis 10 fiel der Code hier ab - genau der Fall,
+  // der Anlass für die Erweiterung auf Version 20 war.
+  'https://coderjan123.github.io/lichess-puzzle-finder/#/results?t=' +
+    [
+      'mateIn3','backRankMate','shortMate','sacrifice','crushing','fork','doubleAttack','pin',
+      'discoveredAttack','bishopEndgame','rookEndgame','queenEndgame','pawnEndgame','mateIn1',
+      'mateIn2','attraction','deflection','interference','overload','quietMate','smotheredMate',
+      'hookMate','anastasiaMate','balestraMate','morphysMate','operaMate','vukovicMate','cornerMate',
+      'swallowstailMate','bodineMate','doubleBishopMate',
+    ].join(',') +
+    '&m=AND&o=hardest&n=5000&v=100000',
 ];
 
 let fehler = 0;
@@ -84,14 +96,23 @@ console.log(`\n  ${svgOk ? 'ok  ' : 'FEHLER'} SVG: ${svg ? `${svg.length} Zeiche
 // wenn jemand eine genau diese Laenge trifft.
 console.log('\nLängensweep (jede Länge einmal, auf Lesebarkeit geprüft):');
 let sweepFehler = 0;
-for (let len = 1; len <= 200; len += 7) {
-  const text = 'A' + 'abcdefghij'.repeat(40).slice(0, len - 1);
+const MAX = 666;
+const VORRAT = 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(30);
+const versionen = new Set();
+for (let len = 1; len <= MAX; len += 3) {
+  // 900 Zeichen Vorrat, sonst testeten Laengen ueber 401 immer denselben Text.
+  const text = 'A' + VORRAT.slice(0, len - 1);
+  if (text.length !== len) {
+    console.log(`  FEHLER Laenge ${len}: Vorrat zu kurz (${text.length})`);
+    sweepFehler++;
+  }
   const m = qrMatrix(text);
   if (!m) {
     console.log(`  FEHLER Länge ${len}: abgelehnt, obwohl ${len} Zeichen passen sollten`);
     sweepFehler++;
     continue;
   }
+  versionen.add(m.version);
   const { daten, kanten } = raster(m);
   const t = jsQR(daten, kanten, kanten);
   if (!t || t.data !== text) {
@@ -100,7 +121,18 @@ for (let len = 1; len <= 200; len += 7) {
   }
 }
 fehler += sweepFehler;
-console.log(`  ${sweepFehler === 0 ? 'ok  ' : 'FEHLER'} 29 Längen von 1 bis 200 Zeichen: alle lesbar`);
+const fehlend = [];
+for (let v = 1; v <= 20; v++) if (!versionen.has(v)) fehlend.push(v);
+console.log(
+  `  ${sweepFehler === 0 ? 'ok  ' : 'FEHLER'} ${Math.ceil(MAX / 3)} Längen von 1 bis ${MAX} Zeichen: alle lesbar` +
+    (fehlend.length ? `, aber Version ${fehlend.join(', ')} nie getroffen` : ', Versionen 1 bis 20 alle getroffen'),
+);
+if (fehlend.length) fehler++;
+
+// Zu lang muss klar abgelehnt werden, nicht in einem kaputten Code enden.
+qrMatrix('A'.repeat(667)) === null
+  ? console.log('  ok    667 Zeichen werden abgelehnt (Grenze 666), statt einen kaputten Code zu liefern')
+  : (fehler++, console.log('  FEHLER 667 Zeichen werden angenommen - mehr, als Version 20 fasst'));
 
 console.log(
   fehler === 0
