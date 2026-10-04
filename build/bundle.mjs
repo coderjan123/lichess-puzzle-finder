@@ -26,11 +26,11 @@ const watch = process.argv.includes('--watch');
 fs.mkdirSync(docs, { recursive: true });
 
 const options = {
-  entryPoints: [path.join(src, 'main.js')],
+  entryPoints: { puzzle: path.join(src, 'main.js'), brett: path.join(src, 'board.js') },
   bundle: true,
   format: 'esm',
   target: ['es2022', 'chrome100', 'safari15', 'firefox100'],
-  outfile: path.join(docs, 'app.js'),
+  outdir: path.join(docs, '_app'),
   minify: !watch,
   sourcemap: watch ? 'inline' : false,
   legalComments: 'none',
@@ -53,6 +53,35 @@ function manifestScript() {
   return `<script>window.__LICHESS_MANIFEST__=${safe(json)};</script>`;
 }
 
+/**
+ * Die zwoelf Figuren als EIN Sprite in die Seite legen.
+ *
+ * Warum inline und nicht als Datei: ein Request je Figurart waere auf einem
+ * alten Handy im schlechten WLAN der Unterschied zwischen einer Seite, die
+ * sofort da ist, und einer, die zappelt. Als <symbol> mit <use> kostet jede
+ * Figur danach gar nichts mehr.
+ *
+ * Quelle: Cburnett-Satz, CC BY-SA 3.0, Colin Burnett. Die Namensangabe steht
+ * in der Fusszeile der Seite.
+ */
+function spriteScript() {
+  const ordner = path.join(src, 'piece');
+  const namen = fs.readdirSync(ordner).filter((f) => f.endsWith('.svg')).sort();
+  if (namen.length !== 12) {
+    throw new Error(`src/piece: ${namen.length} Figuren gefunden, 12 erwartet`);
+  }
+  let raus = '';
+  for (const datei of namen) {
+    const id = path.basename(datei, '.svg');
+    const inhalt = fs.readFileSync(path.join(ordner, datei), 'utf8');
+    const innen = inhalt
+      .replace(/^[\s\S]*?<svg[^>]*>/, '')
+      .replace(/<\/svg>\s*$/, '');
+    raus += `<symbol id="${id}" viewBox="0 0 45 45">${innen}</symbol>`;
+  }
+  return raus;
+}
+
 function writeIndex(js) {
   const html = fs.readFileSync(path.join(src, 'index.html'), 'utf8');
   const css = fs.readFileSync(path.join(src, 'style.css'), 'utf8');
@@ -72,6 +101,26 @@ function writeIndex(js) {
     `${manifestScript()}\n    <script type="module">\n${safe(js)}\n</script>`,
   );
   fs.writeFileSync(path.join(docs, 'index.html'), out);
+  return out.length;
+}
+
+/**
+ * Die Brettseite. Gleiches Prinzip wie die Hauptseite: eine Datei, kein
+ * Manifest, keine Requests ausser dem Favicon.
+ */
+function writeBoard(js) {
+  const html = fs.readFileSync(path.join(src, 'board.html'), 'utf8');
+  const css = fs.readFileSync(path.join(src, 'board.css'), 'utf8');
+  const linkTag = '<link rel="stylesheet" href="board.css" />';
+  const scriptTag = '<script src="board.js" type="module"></script>';
+  const spriteMarke = '<!--PIECES-->';
+  for (const marke of [linkTag, scriptTag, spriteMarke]) {
+    if (!html.includes(marke)) throw new Error(`board.html: Marke fehlt - ${marke}`);
+  }
+  let out = html.replace(linkTag, `<style>\n${css}\n</style>`);
+  out = out.replace(spriteMarke, spriteScript());
+  out = out.replace(scriptTag, `<script type="module">\n${safe(js)}\n</script>`);
+  fs.writeFileSync(path.join(docs, 'board.html'), out);
   return out.length;
 }
 
@@ -110,15 +159,21 @@ if (watch) {
     console.error(`${result.errors.length} Fehler beim Bündeln`);
     process.exit(1);
   }
-  const js = fs.readFileSync(path.join(docs, 'app.js'), 'utf8');
+  const js = fs.readFileSync(path.join(docs, '_app', 'puzzle.js'), 'utf8');
   const jsSize = Buffer.byteLength(js);
   const indexSize = writeIndex(js);
-  // Beide stecken jetzt in index.html; weg damit, damit klar ist, was
-  // tatsächlich ausgeliefert wird.
+  const brettJs = fs.readFileSync(path.join(docs, '_app', 'brett.js'), 'utf8');
+  const brettSize = writeBoard(brettJs);
+  // Alles steckt jetzt in den HTML-Dateien; weg damit, damit klar ist, was
+  // tatsaechlich ausgeliefert wird.
+  fs.rmSync(path.join(docs, '_app'), { recursive: true, force: true });
   fs.rmSync(path.join(docs, 'app.js'), { force: true });
   fs.rmSync(path.join(docs, 'style.css'), { force: true });
+  fs.rmSync(path.join(docs, 'board.js'), { force: true });
+  fs.rmSync(path.join(docs, 'board.css'), { force: true });
 
   const manifestSize = fs.statSync(path.join(docs, 'data', 'manifest.json')).size;
   console.log(`docs/index.html: ${(indexSize / 1024).toFixed(0)} kB (JS ${(jsSize / 1024).toFixed(0)} kB, Manifest ${(manifestSize / 1024).toFixed(0)} kB)`);
+  console.log(`docs/board.html: ${(brettSize / 1024).toFixed(0)} kB (JS ${(Buffer.byteLength(brettJs) / 1024).toFixed(0)} kB, Figuren inline)`);
   console.log('docs/sw.js, docs/icon.svg, docs/data/ bereit');
 }

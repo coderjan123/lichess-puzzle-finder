@@ -1,0 +1,489 @@
+/* Analysis board - Aufbau und Farben wie auf lichess.org.
+ *
+ * Bewusst nachgebaut und nicht kopiert: die Farbwerte, Radien, Abstände und
+ * der Rhythmus sind dieselben, damit es sich gleich anfuehlt. Der CSS von
+ * lichess selbst ist deren eigenes Werk und darf nicht einfach uebernommen
+ * werden - die Nachbauweise hier ist ein Nachbau.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #161512;
+  --bg-2: #262421;
+  --bg-3: #302e2c;
+  --fg: #bababa;
+  --fg-dim: #787878;
+  --linie: #403e3b;
+  --blau: #3692e7;
+  --gruen: #629924;
+  --hell: #f0d9b5;
+  --dunkel: #b58863;
+  --tap: 46px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f0f0f0;
+    --bg-2: #ffffff;
+    --bg-3: #e9e9e9;
+    --fg: #403d39;
+    --fg-dim: #787878;
+    --linie: #d9d7d5;
+    --blau: #3692e7;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Noto Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+}
+
+#sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------ Kopf */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 52px;
+  padding: 0 0.7rem;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--linie);
+}
+
+.topbar h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.topbar .home {
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  color: var(--fg-dim);
+  font-size: 1.7rem;
+  line-height: 1;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.turn {
+  min-width: 2.2rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 1.5rem;
+  line-height: 1;
+  text-align: center;
+  background: var(--bg-3);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+}
+
+.turn.schwarz {
+  color: #000;
+  background: #555;
+}
+
+/* ------------------------------------------------------------------ Brett */
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0.7rem 0.6rem 2rem;
+}
+
+.board-wrap {
+  position: relative;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.feld {
+  position: relative;
+  background: var(--hell);
+}
+
+.feld:nth-child(16n + 2),
+.feld:nth-child(16n + 4),
+.feld:nth-child(16n + 6),
+.feld:nth-child(16n + 8),
+.feld:nth-child(16n + 9),
+.feld:nth-child(16n + 11),
+.feld:nth-child(16n + 13),
+.feld:nth-child(16n + 15) {
+  background: var(--dunkel);
+}
+
+.feld.hervor {
+  /* der letzte Zug */
+  box-shadow: inset 0 0 0 100px rgb(255 213 89 / 22%);
+}
+
+.feld.gewaehlt {
+  box-shadow: inset 0 0 0 100px rgb(255 213 89 / 45%);
+}
+
+.feld.schach {
+  background: radial-gradient(circle at 50% 50%, rgb(255 60 60 / 55%), rgb(255 60 60 / 12%) 70%);
+}
+
+.feld .figur {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.feld .figur svg {
+  width: 88%;
+  height: 88%;
+  pointer-events: none;
+}
+
+.feld .figur.zieht {
+  opacity: 0.35;
+}
+
+.feld .koordinate {
+  position: absolute;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.feld .koordinate.reihe {
+  top: 2px;
+  left: 3px;
+}
+
+.feld .koordinate.spalte {
+  right: 3px;
+  bottom: 2px;
+}
+
+.feld.hell .koordinate {
+  color: #6b5a49;
+}
+
+.feld.dunkel .koordinate {
+  color: #f0d9b5;
+}
+
+/* moeglicher Zug: Punkt ins leere Feld, Ring um ein besetztes */
+.feld .hinweis {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.feld .hinweis::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28%;
+  height: 28%;
+  transform: translate(-50%, -50%);
+  background: rgb(0 0 0 / 22%);
+  border-radius: 50%;
+}
+
+.feld.besetzt .hinweis::before {
+  width: 88%;
+  height: 88%;
+  background: none;
+  border: 6px solid rgb(0 0 0 / 22%);
+}
+
+/* Die Figur, die am Finger klebt. Nur waehrend eines Ziehens sichtbar, und
+ * ueber allem anderen - sonst verschwindet sie hinter dem Brett. */
+.geist {
+  position: fixed;
+  z-index: 50;
+  width: 11%;
+  aspect-ratio: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 4px 6px rgb(0 0 0 / 45%));
+}
+
+.geist svg,
+.geist use {
+  width: 100%;
+  height: 100%;
+}
+
+/* ------------------------------------------------------------------ Umbau */
+
+.promo {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 45%);
+}
+
+.promo[hidden] {
+  display: none;
+}
+
+.promo-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+
+.promo-titel {
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
+.promo-stuecke {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.promo-stuecke button {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  background: var(--bg-3);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.promo-stuecke button svg {
+  width: 82%;
+  height: 82%;
+}
+
+/* ------------------------------------------------------------------ Leiste */
+
+.leiste {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+}
+
+.knopf {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 0.7rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95rem;
+  background: var(--bg-3);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.knopf:active {
+  background: var(--bg);
+}
+
+.knopf:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.knopf.breit {
+  flex: 1;
+}
+
+.knopf.voll {
+  width: 100%;
+}
+
+.knopf:hover {
+  border-color: var(--blau);
+}
+
+.stand {
+  min-width: 4.5rem;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--fg-dim);
+}
+
+/* ------------------------------------------------------------------ Zuege */
+
+.zuege {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr 1fr;
+  gap: 1px 0.2rem;
+  margin: 0 0 0.8rem;
+  padding: 0.3rem;
+  list-style: none;
+  background: var(--bg-2);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+}
+
+.zuege li {
+  display: contents;
+}
+
+.zuege .nummer {
+  padding: 0.25rem 0.3rem;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--fg-dim);
+}
+
+.zuege button {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 0.5rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95rem;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.zuege button:hover {
+  background: var(--bg-3);
+}
+
+.zuege button.an {
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--gruen);
+}
+
+.zuege .leer {
+  color: var(--fg-dim);
+}
+
+/* ------------------------------------------------------------------ Karte */
+
+.karte {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  background: var(--bg-2);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+}
+
+.zeile {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Achtung: .feld ist eine Brettkachel. Die Eingabe heisst darum .eingabe und
+   nicht etwa .feld - sonst frisst diese Regel die Kacheln mit. */
+.eingabe {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.eingabe span {
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
+.eingabe input {
+  min-height: var(--tap);
+  padding: 0 0.6rem;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  background: var(--bg-3);
+  border: 1px solid var(--linie);
+  border-radius: 4px;
+}
+
+.eingabe input:focus {
+  outline: 2px solid var(--blau);
+  outline-offset: -1px;
+}
+
+.hinweis {
+  min-height: 1.2rem;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+}
+
+.hinweis.fehler {
+  color: #e2725b;
+}
+
+.hinweis.ok {
+  color: var(--gruen);
+}
+
+.fuss {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+  color: var(--fg-dim);
+}
+
+/* ------------------------------------------------------------------ Ganz gross */
+
+@media (min-width: 700px) {
+  main {
+    max-width: 640px;
+  }
+
+  .brett-zwei {
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    gap: 1rem;
+    align-items: start;
+  }
+}

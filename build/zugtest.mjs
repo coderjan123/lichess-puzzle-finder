@@ -15,7 +15,7 @@
  *   node build/zugtest.mjs --tief 3  laenger, findet mehr
  */
 
-import { parseFen, toFen, legalMoves, moveToUci, moveToSan, sanToMove, makeMove, undoMove, isCheckmate, isStalemate, outcome } from '../src/chess.js';
+import { parseFen, toFen, legalMoves, moveToUci, moveToSan, sanToMove, makeMove, undoMove, isCheckmate, isStalemate, outcome, toIndex, fromIndex, squareName, parseSquare } from '../src/chess.js';
 import { lesen, legal as naivLegal, spielen as naivSpielen, pseudo as naivPseudo } from './naiv.mjs';
 
 const argumente = process.argv.slice(2);
@@ -278,6 +278,50 @@ function ownShort(fen) {
 }
 
 const sekunden = ((Date.now() - t0) / 1000).toFixed(1);
+// Brett und Anzeige muessen dieselbe Nummerierung benutzen.
+//
+// In src/chess.js ist 0x88-Zeile 0 die ERSTE Reihe (h1 = 0x07), fuer die
+// Anzeige wird aber von oben gezaehlt. Diese beiden Richtungen haben einmal
+// gegeneinander gearbeitet: alle Regeltests waren gruen, trotzdem war auf
+// dem Brett kein einziger Zug moeglich. Deshalb wird es hier festgenagelt.
+{
+  const ecken = {
+    a8: 0,
+    h8: 7,
+    a1: 56,
+    h1: 63,
+    e2: 52,
+    e4: 36,
+    d1: 59,
+    d8: 3,
+  };
+  let sauber = true;
+  const zeilen = [];
+  for (const [name, soll] of Object.entries(ecken)) {
+    const sq = parseSquare(name);
+    const ist = toIndex(sq);
+    const zurueck = fromIndex(ist);
+    if (ist !== soll || zurueck !== sq) {
+      sauber = false;
+      zeilen.push(`${name}: Index ${ist} statt ${soll}`);
+    }
+  }
+  pruefe(sauber, `Anzeige und Brett nummerieren gleich (${Object.keys(ecken).length} Felder geprueft)${sauber ? '' : ': ' + zeilen.join(', ')}`);
+
+  // Die Kachel, die der Inhalt belegt, muss die sein, die angezeigt wird.
+  // Anzeigezeile 0 ist die achte Reihe (schwarz), Zeile 7 die erste (weiss).
+  const pos = parseFen(STELLUNGEN[0]);
+  const anzeige = [];
+  for (let i = 56; i < 64; i++) anzeige.push(pos.board[fromIndex(i)]);
+  const erwartet = 'RNBQKBNR'.split('');
+  const stimmt = anzeige.every((p, i) => p !== 0 && p === 8 | erwartet[i].charCodeAt(0) - 65);
+  pruefe(stimmt, 'die unterste Anzeigezeile traegt die weissen Figuren der ersten Reihe');
+  const oben = [];
+  for (let i = 0; i < 8; i++) oben.push(pos.board[fromIndex(i)]);
+  const stimmtOben = oben.every((p, i) => p !== 0 && p === 16 | erwartet[i].charCodeAt(0) - 97);
+  pruefe(stimmtOben, 'die oberste Anzeigezeile traegt die schwarzen Figuren der achten Reihe');
+}
+
 console.log('');
 if (fehler) {
   console.log(`${rot}${fehler} Fehler bei ${knoten} verglichenen Stellungen${aus} (${sekunden}s)`);

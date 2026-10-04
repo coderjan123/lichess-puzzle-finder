@@ -81,14 +81,22 @@ function sq(file, rank) {
   return rank * 16 + file;
 }
 
-/** 0x88 -> 0..63 für Arrays und Anzeige (Brettzeile von oben). */
+/**
+ * 0x88 -> 0..63 fuer die Anzeige, Zeile 0 ist die oberste (die 8. Reihe).
+ *
+ * ACHTUNG: in dieser Datei ist 0x88-Zeile 0 die ERSTE Reihe - h1 ist 0x07.
+ * Fuer die Anzeige ist die Zeile von oben gezaehlt, also 7 minus Zeile.
+ * Beide Richtungen haben schon einmal das Gegenteil angenommen, und dann
+ * hat die Anzeige ein voellig anderes Brett gezeigt als die Regeln
+ * gerechnet haben - ohne dass ein einziger Regeltest rot wurde.
+ */
 export function toIndex(s) {
-  return ((s >> 4) & 7) * 8 + (s & 7);
+  return ((7 - ((s >> 4) & 7)) << 3) | (s & 7);
 }
 
 /** 0..63 (Zeile von oben) -> 0x88. */
 export function fromIndex(i) {
-  return ((i >> 3) & 7) * 16 + (i & 7);
+  return ((7 - (i >> 3)) << 4) | (i & 7);
 }
 
 /** 0x88 -> "e4" */

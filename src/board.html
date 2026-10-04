@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Analysis board</title>
+    <meta name="description" content="A chess board that knows the rules: legal moves only, no engine, no database, works offline." />
+    <meta name="theme-color" content="#161512" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="board.css" />
+  </head>
+  <body>
+    <!-- Figuren als ein Sprite. Beim Bau werden die zwoelf SVG-Dateien aus
+         src/piece/ hier hineingelegt - so kostet jede Figur keinen Request. -->
+    <svg id="sprite" aria-hidden="true" focusable="false"><!--PIECES--></svg>
+
+    <header class="topbar">
+      <a class="home" href="./" aria-label="Back to the puzzle finder">‹</a>
+      <h1>Analysis board</h1>
+      <span class="turn" id="turnTag"></span>
+    </header>
+
+    <main>
+      <section class="board-wrap">
+        <div class="board" id="board" role="grid" aria-label="Chess board"></div>
+        <div class="promo" id="promo" hidden role="dialog" aria-label="Choose a piece" aria-modal="true">
+          <div class="promo-inner">
+            <span class="promo-titel">Promote to</span>
+            <div class="promo-stuecke" id="promoStuecke"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="leiste">
+        <button type="button" class="knopf" id="btnStart" title="First" aria-label="Go to the start">⇤</button>
+        <button type="button" class="knopf" id="btnPrev" title="Previous" aria-label="Previous move">◀</button>
+        <span class="stand" id="stand">0/0</span>
+        <button type="button" class="knopf" id="btnNext" title="Next" aria-label="Next move">▶</button>
+        <button type="button" class="knopf" id="btnEnd" title="Last" aria-label="Go to the end">⇥</button>
+      </section>
+
+      <ol class="zuege" id="zuege" aria-label="Moves"></ol>
+
+      <section class="karte">
+        <div class="zeile">
+          <button type="button" class="knopf breit" id="btnZurueck">Undo</button>
+          <button type="button" class="knopf breit" id="btnNeu">New game</button>
+          <button type="button" class="knopf breit" id="btnDrehen">Flip</button>
+        </div>
+        <label class="eingabe">
+          <span>FEN</span>
+          <input id="fen" type="text" spellcheck="false" autocomplete="off" inputmode="text" />
+        </label>
+        <button type="button" class="knopf breit voll" id="btnSetzen">Load position</button>
+        <p class="hinweis" id="hinweis"></p>
+        <button type="button" class="knopf breit voll" id="btnTeilen">Copy link</button>
+      </section>
+
+      <p class=" fuss">
+        Legal moves only. No engine, no opening database, nothing sent anywhere -
+        the position stays on this device.
+        Figures: the Cburnett set by Colin Burnett, CC BY-SA 3.0.
+      </p>
+    </main>
+
+    <script src="board.js" type="module"></script>
+  </body>
+</html>
