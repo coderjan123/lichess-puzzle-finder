@@ -147,7 +147,11 @@ const anzeigeIndex = (i) => (S.gedreht ? 63 - i : i);
 
 function zeichne() {
   const pos = S.pos;
-  const koenig = isCheck(pos) ? (pos.turn === WHITE ? pos.king[1] : pos.king[0]) : -1;
+  // king[0] ist der weise, king[1] der schwarze Koenig (siehe chess.js, setFen
+  // und makeMove). Wer hier spiegelt, faerbt bei Schach fuer Weiss den
+  // schwarzen Koenig rot - das ist genau der Fehler, der zwei Tage unentdeckt
+  // blieb, weil die Regeltests diese Funktion nie benutzen.
+  const koenig = isCheck(pos) ? (pos.turn === WHITE ? pos.king[0] : pos.king[1]) : -1;
   const schachAnzeige = koenig >= 0 ? anzeigeIndex(toIndex(koenig)) : -1;
   const ziele = new Set(S.ziele.map((m) => anzeigeIndex(toIndex(moveTo(m)))));
   const letzterVon = S.letzter ? anzeigeIndex(toIndex(moveFrom(S.letzter))) : -1;

@@ -307,6 +307,67 @@ await seite.waitForTimeout(80);
   ? ok('Klick auf "e4" in der Liste springt dorthin')
   : bad('Klick in der Liste sprang nicht');
 
+// ------------------------------------------------------------------ 6b Schach
+
+step('6b · Schach und Matt werden am richtigen König markiert');
+
+// Das Feld, das rot markiert wird, muss das des Königs sein, der wirklich
+// im Schach steht - geprüft an der Beschriftung, nicht an der Farbe. Der
+// Fehler war spiegelverkehrt herum: bei Schach für Weiß wurde der schwarze
+// König markiert, und alle anderen Prüfungen waren grün, weil sie nur den
+// Text "Black wins" gelesen haben.
+const schachfaelle = [
+  { fen: 'R3k3/8/8/8/8/8/8/4K3 b - - 0 1', erwartet: 'black king on e8', warum: 'weisser Turm a8, schwarz am Zug' },
+  { fen: 'r3K3/8/8/8/8/8/8/4k3 w - - 0 1', erwartet: 'white king on e8', warum: 'schwarzer Turm a8, weiß am Zug' },
+  {
+    fen: 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3',
+    erwartet: 'white king on e1',
+    warum: 'Matt (Damenopfer)',
+  },
+  {
+    fen: 'rnbqkbnr/ppppp2p/5p2/6pQ/4P3/8/PPPP1PPP/RNB1KBNR b KQkq - 1 3',
+    erwartet: 'black king on e8',
+    warum: 'Matt (Läufermatt)',
+  },
+  { fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', erwartet: null, warum: 'Startstellung, nichts markiert' },
+];
+
+for (const { fen, erwartet, warum } of schachfaelle) {
+  await seite.fill('#fen', fen);
+  await seite.click('#btnSetzen');
+  await seite.waitForTimeout(140);
+  const markiert = await seite.evaluate(() => {
+    const f = document.querySelector('.feld.schach');
+    return f ? f.getAttribute('aria-label') : null;
+  });
+  const anzahl = await seite.locator('.feld.schach').count();
+  if (erwartet === null) {
+    anzahl === 0
+      ? ok(`${warum}: nichts markiert`)
+      : bad(`${warum}: ${anzahl} Felder markiert statt keinem`);
+  } else {
+    markiert === erwartet && anzahl === 1
+      ? ok(`${warum}: markiert ist "${markiert}"`)
+      : bad(`${warum}: markiert "${markiert}" statt "${erwartet}" (${anzahl} Felder)`);
+  }
+}
+
+// Und die Markierung muss dem Brett folgen, wenn es gedreht wird.
+await seite.fill('#fen', 'R3k3/8/8/8/8/8/8/4K3 b - - 0 1');
+await seite.click('#btnSetzen');
+await seite.waitForTimeout(140);
+await dreheAuf(seite, true);
+const markiertGedreht = await seite.evaluate(() => {
+  const f = document.querySelector('.feld.schach');
+  return f ? f.getAttribute('aria-label') : null;
+});
+markiertGedreht === 'black king on e8'
+  ? ok('gedreht bleibt der schwarze König auf e8 markiert')
+  : bad(`gedreht markiert: ${markiertGedreht}`);
+await dreheAuf(seite, false);
+await seite.click('#btnNeu');
+await seite.waitForTimeout(100);
+
 // ------------------------------------------------------------------ 7 Drehen
 
 step('7 · Brett drehen');
