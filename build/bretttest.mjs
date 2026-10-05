@@ -132,6 +132,40 @@ const pfadSichtbar = await seite.evaluate(() => {
 });
 pfadSichtbar ? ok('Figuren haben eine Form (Pfad vorhanden)') : bad('Figur ohne Pfad');
 
+// UND: sie muessen auch gemalt werden. Ein nacktes <use> ohne umgebendes
+// <svg> hat keinen Bezugsrahmen und wird gar nicht angezeigt - das Brett
+// war komplett leer, waehrend "32 Figuren" und "Pfad vorhanden" gruen
+// waren. Zaehlen kann das nicht finden, also wird hier geschaut:
+// zwei gleichfarbige Felder, eines besetzt, eines leer, und die Bilder
+// der beiden Felder werden verglichen. Ohne Figuren sind sie identisch.
+const gemalteFelder = await seite.evaluate(() => {
+  const felder = [...document.querySelectorAll('.feld')];
+  const hell = felder.filter((f) => f.classList.contains('hell'));
+  const mit = hell.find((f) => f.querySelector('.figur'));
+  const ohne = hell.find((f) => !f.querySelector('.figur'));
+  return {
+    mit: mit ? Number(mit.dataset.i) : -1,
+    ohne: ohne ? Number(ohne.dataset.i) : -1,
+  };
+});
+const bildMit = await seite.locator(`.feld[data-i="${gemalteFelder.mit}"]`).screenshot();
+const bildOhne = await seite.locator(`.feld[data-i="${gemalteFelder.ohne}"]`).screenshot();
+const gleich = bildMit.length === bildOhne.length && bildMit.equals(bildOhne);
+!gleich
+  ? ok(`Figur wird wirklich gemalt (Bild des besetzten Feldes ${gemalteFelder.mit} unterscheidet sich vom leeren ${gemalteFelder.ohne})`)
+  : bad(`Feld ${gemalteFelder.mit} und leeres Feld ${gemalteFelder.ohne} sehen gleich aus - es wird nichts gemalt`);
+
+// Und die Figur muss auch eine Größe haben, nicht nur einen Knoten.
+const figurBreite = await seite.evaluate(() => {
+  const svg = document.querySelector('.feld .figur svg');
+  if (!svg) return 0;
+  return svg.getBoundingClientRect().width;
+});
+const feldBreite = await seite.evaluate(() => document.querySelector('.feld').getBoundingClientRect().width);
+figurBreite > feldBreite * 0.6
+  ? ok(`Figur füllt ${(figurBreite / feldBreite * 100).toFixed(0)} % des Feldes`)
+  : bad(`Figur nur ${figurBreite.toFixed(0)} px breit bei ${feldBreite.toFixed(0)} px Feld`);
+
 // ------------------------------------------------------------------ 2 Tippen
 
 step('2 · Zug durch Antippen');

@@ -85,11 +85,39 @@ const S = {
   /** Letzter angezeigter Zug, für die Hervorhebung. */
   letzter: null,
   gedreht: false,
-  /** Umschlag: {von, nach, roh} - der Zug ist noch nicht entschieden. */
+  /** Umschlag: {move} - der Zug ist noch nicht entschieden. */
   offen: null,
   /** Zeiger: {von, x, y, startX, startY, zieht, startZiel}. */
   griff: null,
 };
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Eine Figur als eigenes `<svg>` mit `<use>` darin.
+ *
+ * Wichtig, und nicht selbstverständlich: ein `<use>` **muss** in einem
+ * `<svg>` stehen. Ohne das umgebende Element gibt es keinen Bezugsrahmen,
+ * 100 % Breite und Höhe lösen sich nirgendwo auf - und der Browser malt
+ * gar nichts. Der erste Wurf hatte ein nacktes `<use>` in einem `<span>`:
+ * Das Brett blieb leer, und alle Tests waren grün, weil sie nur gezählt
+ * haben, ob ein Element mit passendem `href` da ist. Deshalb prüft
+ * `bretttest.mjs` jetzt Pixel, nicht Elemente.
+ */
+function figurElement(id) {
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 45 45');
+  const nutzlast = document.createElementNS(SVGNS, 'use');
+  nutzlast.setAttribute('href', `#${id}`);
+  svg.append(nutzlast);
+  return svg;
+}
+
+/** Nur das `href` erneuern, wenn sich die Figur aendert. */
+function setzeFigur(svg, id) {
+  const nutzlast = svg.firstChild;
+  if (nutzlast.getAttribute('href') !== `#${id}`) nutzlast.setAttribute('href', `#${id}`);
+}
 
 const felder = [];
 
@@ -149,12 +177,11 @@ function zeichne() {
       if (!halter) {
         halter = document.createElement('span');
         halter.className = 'figur';
-        halter.append(document.createElement('use'));
+        halter.append(figurElement('wP'));
         feld.prepend(halter);
       }
-      const nutzlast = halter.firstChild;
       const id = `${stueck & BLACK ? 'b' : 'w'}${BUCHSTABE[typeOf(stueck)]}`;
-      if (nutzlast.getAttribute('href') !== `#${id}`) nutzlast.setAttribute('href', `#${id}`);
+      setzeFigur(halter.firstChild, id);
       halter.classList.toggle('zieht', Boolean(S.griff?.zieht && S.griff.von === sq));
     }
 
@@ -445,9 +472,7 @@ function ghostAnlegen() {
   const g = document.createElement('div');
   g.id = 'geist';
   g.className = 'geist';
-  const u = document.createElement('use');
-  u.setAttribute('href', `#${stueck & BLACK ? 'b' : 'w'}${BUCHSTABE[typeOf(stueck)]}`);
-  g.append(u);
+  g.append(figurElement(`${stueck & BLACK ? 'b' : 'w'}${BUCHSTABE[typeOf(stueck)]}`));
   document.body.append(g);
 }
 
@@ -462,9 +487,7 @@ function zeigeUmbau() {
     b.type = 'button';
     b.setAttribute('aria-label', `Promote to ${name}`);
     b.dataset.typ = String(typ);
-    const u = document.createElement('use');
-    u.setAttribute('href', `#${farbe}${BUCHSTABE[typ]}`);
-    b.append(u);
+    b.append(figurElement(`${farbe}${BUCHSTABE[typ]}`));
     b.addEventListener('click', () => umbau(typ));
     el.promoStuecke.append(b);
   }
