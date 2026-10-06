@@ -30,7 +30,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => {
+        const host = new URL(self.location.href).hostname;
+        const lokal = host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host);
+        return Promise.all(
+          keys.filter((k) => lokal || k !== CACHE).map((k) => caches.delete(k)),
+        );
+      })
       .then(() => self.clients.claim()),
   );
 });
@@ -41,6 +47,12 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // z. B. zu lichess.org
+
+  // Auf dem eigenen Testserver wird nichts zwischengespeichert. localhost
+  // gilt als sichere Herkunft, dieser Worker laeuft also auch dort - und
+  // dann sieht man beim Testen eine alte Seite, ohne es zu merken.
+  const host = new URL(self.location.href).hostname;
+  if (host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host)) return;
 
   // Seitenaufruf: sofort aus dem Cache, im Hintergrund auffrischen.
   if (request.mode === 'navigate') {

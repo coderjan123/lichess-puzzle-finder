@@ -179,6 +179,25 @@
       </div>
     </div>
 
+    <!-- Auf localhost wird jeder alte Service Worker abgemaeldet und jeder
+         Cache geleert. localhost gilt als sichere Herkunft, der Worker
+         laeuft also auch beim Testen - und dann zeigt die Seite lange eine
+         alte Fassung, ohne dass man es merkt. Genau das ist passiert. -->
+    <script>
+      if (
+        location.hostname === 'localhost' ||
+        location.hostname === '[::1]' ||
+        /^127\.\d+\.\d+\.\d+$/.test(location.hostname)
+      ) {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker
+            .getRegistrations()
+            .then((liste) => liste.forEach((e) => e.unregister()))
+            .catch(() => {});
+        }
+        if ('caches' in window) caches.keys().then((s) => s.forEach((k) => caches.delete(k))).catch(() => {});
+      }
+    </script>
     <script src="board.js" type="module"></script>
   </body>
 </html>

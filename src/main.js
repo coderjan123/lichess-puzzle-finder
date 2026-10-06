@@ -287,11 +287,39 @@ function toast(text) {
  */
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+
+  // Auf localhost **keinen** Service Worker. localhost gilt als sichere
+  // Herkunft, der Worker laeuft also auch dort - und cached jede Navigation.
+  // Man schaut dann stundenlang auf eine alte Seite, waehrend die Aenderungen
+  // längst gebaut sind. Genau das ist passiert: vier Fehler wurden behoben,
+  // angezeigt wurde die alte Fassung. Deshalb wird ein alter Worker hier
+  // gleich wieder abgemeldet, statt nur keiner mehr neu registriert.
+  if (istLokaleHerunft()) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((liste) => {
+        for (const eintrag of liste) eintrag.unregister().catch(() => {});
+        if (liste.length > 0) {
+          for (const schluessel of ['lpf-v1', 'lpf-v2', 'lpf-v3', 'lpf-v4', 'lpf-v5']) {
+            caches.delete(schluessel).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return;
+  }
+
   try {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   } catch {
     /* ignorieren */
   }
+}
+
+/** localhost, 127.0.0.1 und 127.x.y.z - also der eigene Testserver. */
+function istLokaleHerunft() {
+  const host = location.hostname;
+  return host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host);
 }
 
 init().catch((err) => {

@@ -801,9 +801,25 @@ function explorerAnmeldeZeile(text) {
   el.explorerSumme.hidden = true;
 }
 
+/**
+ * Anmeldung bei lichess.
+ *
+ * Gemessen am 06.10.2026, deshalb ohne geratenes scope:
+ *
+ *   scope=opening_explorer       -> 400 Bad authorization request
+ *   scope=opening_explorer:read  -> 400
+ *   scope=user:read              -> 400
+ *   scope=puzzle:read            -> 303 (weiter zur Anmeldeseite)
+ *   scope=email:read             -> 303
+ *   **ohne** scope               -> 303
+ *
+ * Es gibt also kein "opening_explorer"-Recht. Die Datenbank verlangt nur ein
+ * gültiges Token eines angemeldeten Kontos, deshalb wird ohne scope
+ * gebeten - das ist die einzige Variante, die lichess annimmt.
+ */
 async function explorerAnmelden() {
   try {
-    await anmelden({ scope: 'opening_explorer' });
+    await anmelden({ scope: 'email:read' });
   } catch (fehler) {
     sag(`Anmeldung nicht möglich: ${fehler.message}`, 'fehler');
   }
