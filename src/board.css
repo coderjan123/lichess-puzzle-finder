@@ -281,7 +281,8 @@ input {
 .geist {
   position: fixed;
   z-index: 50;
-  width: 11%;
+  /* Die Breite setzt board.js in Pixeln - genau ein Feld. */
+  width: 44px;
   aspect-ratio: 1;
   pointer-events: none;
   transform: translate(-50%, -50%);
@@ -673,6 +674,21 @@ input {
   font-size: 0.68rem;
   color: var(--schrift-matt);
   cursor: pointer;
+}
+
+.anmelde-zeile {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.anmelde-zeile .schmal {
+  flex: 0 1 auto;
+  padding: 0 10px;
+}
+
+.anmelde-zeile .schmal[hidden] {
+  display: none;
 }
 
 .tabelle-korper {

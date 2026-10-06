@@ -97,11 +97,15 @@
             ><span class="schmal">Ms</span><span>Score</span>
             <button type="button" class="sortieren" id="btnSortieren" aria-label="Sort">⇅ Sort</button>
           </div>
+          <div class="anmelde-zeile">
+            <button type="button" class="blau schmal" id="explorerAnmelden">Log in with lichess</button>
+            <button type="button" class="blau schmal" id="explorerAbmelden" hidden>Log out</button>
+          </div>
           <div class="tabelle-korper" id="explorerZeilen">
-            <p class="hinweis" id="explorerHinweis">Log in to see the opening database.</p>
+            <p class="hinweis" id="explorerHinweis">Log in, um die Eröffnungsdatenbank zu sehen.</p>
           </div>
           <div class="summe" id="explorerSumme" hidden>
-            <span>Σ</span><span class="wert">100%</span><span class="zahl" id="summeZahl">0</span>
+            <span>Σ</span><span class="wert" id="summeWeiss"></span><span class="zahl" id="summeSpiele"></span>
           </div>
           <div class="spiele">
             <div class="spiele-kopf">Lichess games</div>

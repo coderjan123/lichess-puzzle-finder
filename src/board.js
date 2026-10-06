@@ -15,6 +15,18 @@
 
 import { VERFUEGBARE_VERSIONEN, engineLaden, umgebungsProblem } from './engine.js';
 import {
+  QUELLEN,
+  ExplorerFehler,
+  abbrechen as abfrageAbbrechen,
+  abmelden,
+  abfrage,
+  anmelden,
+  anmeldenFortsetzen,
+  istAngemeldet,
+  tokenStatus,
+  normiereFen,
+} from './explorer.js';
+import {
   parseFen,
   toFen,
   legalMoves,
@@ -86,6 +98,10 @@ const el = {
   setFiguren: $('setFiguren'),
   setKoordinaten: $('setKoordinaten'),
   setSeite: $('setSeite'),
+  explorerAnmelden: $('explorerAnmelden'),
+  explorerAbmelden: $('explorerAbmelden'),
+  explorerSummeZeile: $('explorerSumme'),
+  sortieren: $('btnSortieren'),
 };
 
 /**
@@ -108,6 +124,12 @@ const E = {
   info: { tiefe: 0, knoten: 0, nps: 0, sekunden: 0 },
   besterZug: null,
   rechnet: false,
+  seitenThema: 'dark',
+  /** Quelle der Eröffnungsdatenbank, gerade gewaehlt. */
+  quelle: 'lichess',
+  /** Letzte Antwort, damit die Zeilen nicht flackern. */
+  explorerLetzte: null,
+  explorerLaeuft: false,
 };
 
 const BUCHSTABE = { 1: 'P', 2: 'N', 3: 'B', 4: 'R', 5: 'Q', 6: 'K' };
@@ -352,6 +374,7 @@ function spiele(move) {
   zeichne();
   adresseSchreiben();
   engineRechnen();
+  explorerFragen();
   const ergebnis = outcome(S.pos);
   if (ergebnis) {
     sag(
@@ -377,6 +400,7 @@ function zurueck() {
   zeichne();
   adresseSchreiben();
   engineRechnen();
+  explorerFragen();
 }
 
 /**
@@ -404,6 +428,7 @@ function geheZu(cursor) {
   zeichne();
   adresseSchreiben();
   engineRechnen();
+  explorerFragen();
 }
 
 // ------------------------------------------------------------------ Ziehen und Tippen
@@ -534,6 +559,10 @@ function ghostAnlegen() {
   const g = document.createElement('div');
   g.id = 'geist';
   g.className = 'geist';
+  // Genau ein Feld, in Pixeln. "11 %" war eine Faustregel gegenueber dem
+  // Fenster und wurde auf dem Handy fast doppelt so gross wie das Feld.
+  const feld = el.brett.getBoundingClientRect().width / 8;
+  if (feld > 0) g.style.width = `${feld}px`;
   g.append(figurElement(`${stueck & BLACK ? 'b' : 'w'}${BUCHSTABE[typeOf(stueck)]}`));
   document.body.append(g);
 }
@@ -742,9 +771,256 @@ el.brett.addEventListener('mousedown', (e) => {
   zeichnenStarten(e.clientX, e.clientY);
 });
 
+// ------------------------------------------------------------------ Datenbank
+
+/**
+ * Eröffnungsdatenbank.
+ *
+ * Zwei Dinge, die man wissen muss:
+ *
+ * 1. Die Endpunkte von lichess geben anonym **401**. Es braucht eine
+ *    Anmeldung; das Token liegt nur auf diesem Gerät, es gibt kein
+ *    Client-Geheimnis und keinen Server. Ohne Anmeldung sagt die Seite das
+ *    auch genau so, statt eine leere Tabelle zu zeigen.
+ *
+ * 2. "Elite" ist die Masters-Datenbank, "CORR", "2024+" und "TT" sind
+ *    Filter auf dieselbe Abfrage. Es sind also fuenf Reiter, aber nur zwei
+ *    verschiedene Wege - genau so baut es lila.
+ */
+const X = {
+  reihenfolge: null,
+  sortierung: 'games',
+  spielerZug: false,
+};
+
+function explorerAnmeldeZeile(text) {
+  const p = document.createElement('p');
+  p.className = 'hinweis';
+  p.textContent = text;
+  el.explorerZeilen.replaceChildren(p);
+  el.explorerSumme.hidden = true;
+}
+
+async function explorerAnmelden() {
+  try {
+    await anmelden({ scope: 'opening_explorer' });
+  } catch (fehler) {
+    sag(`Anmeldung nicht möglich: ${fehler.message}`, 'fehler');
+  }
+}
+
+function explorerAbmelden() {
+  abmelden();
+  explorerAnmeldeZeile('Abgemeldet.');
+  sag('Abgemeldet.', null);
+}
+
+/** Nach jeder Stellungsänderung nachfragen - aber nur, wenn eingeloggt. */
+async function explorerFragen() {
+  if (!istAngemeldet()) {
+    explorerAnmeldeZeile('Log in, um die Eröffnungsdatenbank zu sehen.');
+    return;
+  }
+  abfrageAbbrechen();
+  S.explorerLaeuft = true;
+  const fen = toFen(S.pos);
+  const zuege = S.verlauf.slice(0, S.cursor).map((z) => z.uci);
+  const quelle = QUELLEN.find((q) => q.id === S.quelle) ?? QUELLEN[0];
+  el.explorerZeilen.replaceChildren(Object.assign(document.createElement('p'), {
+    className: 'hinweis',
+    textContent: 'frage …',
+  }));
+  try {
+    const antwort = await abfrage(fen, { quelle: quelle.id, zuege, anzahl: 12 });
+    if (S.explorerLaeuft === false) return;
+    S.explorerLetzte = antwort;
+    explorerZeichnen(antwort);
+  } catch (fehler) {
+    const text =
+      fehler instanceof ExplorerFehler && fehler.code === 'nichtAngemeldet'
+        ? 'Die Anmeldung ist abgelaufen. Bitte erneut einloggen.'
+        : `Datenbank nicht erreichbar: ${fehler.message}`;
+    explorerAnmeldeZeile(text);
+    if (fehler instanceof ExplorerFehler && fehler.code === 'nichtAngemeldet') {
+      explorerAnmeldeStand();
+    }
+  } finally {
+    S.explorerLaeuft = false;
+  }
+}
+
+function explorerAnmeldeStand() {
+  el.explorerAnmelden.hidden = false;
+  el.explorerAbmelden.hidden = true;
+}
+
+function explorerAbmeldeStand() {
+  el.explorerAnmelden.hidden = true;
+  el.explorerAbmelden.hidden = false;
+}
+
+/** Sieg/Unentschieden/Nieder als Balken, wie auf den Screenshots. */
+function wdlBalken(zeile) {
+  const gewonnen = zeile.weiss ?? 0;
+  const verloren = zeile.schwarz ?? 0;
+  const unentschieden = zeile.remp ?? 0;
+  const summe = gewonnen + verloren + unentschieden;
+  const huelle = document.createElement('div');
+  huelle.className = 'balken';
+  if (summe > 0) {
+    const weiss = document.createElement('span');
+    weiss.className = 'gewonnen';
+    weiss.style.width = `${(gewonnen / summe) * 100}%`;
+    const haette = document.createElement('span');
+    haette.className = 'grenze';
+    haette.style.left = '50%';
+    const schwarz = document.createElement('span');
+    schwarz.className = 'verloren';
+    schwarz.style.width = `${(verloren / summe) * 100}%`;
+    const text = document.createElement('span');
+    text.className = 'balken-text';
+    text.innerHTML = `<span>${Math.round((gewonnen / summe) * 100)}%</span><span>${Math.round((verloren / summe) * 100)}%</span>`;
+    huelle.append(weiss, schwarz, haette);
+    huelle.title = `Weiß ${gewonnen} · Remis ${unentschieden} · Schwarz ${verloren}`;
+  } else {
+    huelle.style.background = 'transparent';
+  }
+  return huelle;
+}
+
+function explorerZeichnen(antwort) {
+  const frag = document.createDocumentFragment();
+  const reihen = antwort.zuege ?? [];
+  if (reihen.length === 0) {
+    explorerAnmeldeZeile('Keine Züge aus der Datenbank für diese Stellung.');
+    return;
+  }
+  for (const zeile of reihen) {
+    const tr = document.createElement('div');
+    tr.className = 'explorer-zeile';
+    tr.tabIndex = 0;
+
+    const zug = document.createElement('span');
+    zug.className = 'zug';
+    zug.textContent = zeile.san ?? zeile.uci;
+
+    const bewertung = document.createElement('span');
+    bewertung.className = 'bewertung';
+    const zahl = typeof zeile.bewertung === 'number' ? (zeile.bewertung / 100).toFixed(2) : null;
+    bewertung.textContent = zahl === null ? '' : `${zahl > 0 ? '+' : ''}${zahl}`;
+    if (zahl !== null && zahl.startsWith('-')) bewertung.classList.add('negativ');
+
+    const spieleZahl = document.createElement('span');
+    spieleZahl.className = 'spiele-zahl';
+    spieleZahl.textContent = zeile.spiele ? zeile.spiele.toLocaleString('de-DE') : '';
+
+    const anteil = document.createElement('span');
+    anteil.className = 'anteil';
+    anteil.textContent = zeile.teil ? `${Math.round(zeile.teil * 100)}%` : '';
+
+    const zweiterAnteil = document.createElement('span');
+    zweiterAnteil.className = 'anteil';
+    zweiterAnteil.textContent = zeile.teil2 ? `${Math.round(zeile.teil2 * 100)}%` : '';
+
+    tr.append(zug, bewertung, spieleZahl, anteil, zweiterAnteil, wdlBalken(zeile));
+
+    // Klick auf eine Zeile spielt den Zug - das ist der Sinn der Tabelle.
+    const spielen = () => {
+      const treffer = legalMoves(S.pos).find((m) => moveToUci(m) === zeile.uci);
+      if (treffer === undefined) {
+        sag(`${zeile.san ?? zeile.uci} ist hier nicht möglich.`, 'fehler');
+        return;
+      }
+      fertig(treffer);
+    };
+    tr.addEventListener('click', spielen);
+    tr.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        spielen();
+      }
+    });
+    frag.append(tr);
+  }
+  el.explorerZeilen.replaceChildren(frag);
+
+  // Sigma-Zeile
+  if (typeof antwort.weissGesamt === 'number' || typeof antwort.schwarzGesamt === 'number') {
+    el.explorerSumme.hidden = false;
+    $('summeWeiss').textContent = anteilProzent(antwort.weissGesamt, antwort.weissGesamt, antwort.rempGesamt, antwort.schwarzGesamt);
+    $('summeSpiele').textContent = (antwort.spieleGesamt ?? 0).toLocaleString('de-DE');
+    $('summeZahl').textContent = (antwort.spieleGesamt ?? 0).toLocaleString('de-DE');
+  } else {
+    el.explorerSumme.hidden = true;
+  }
+
+  // Top-Spiele
+  const spiele = antwort.topSpiele ?? [];
+  if (spiele.length === 0) {
+    $('explorerSpiele').replaceChildren();
+    return;
+  }
+  const spielFrag = document.createDocumentFragment();
+  for (const spiel of spiele) {
+    const zeile = document.createElement('div');
+    zeile.className = 'spiel-zeile';
+    const name = document.createElement('a');
+    name.href = spiel.url ?? `https://lichess.org/${spiel.weiss ?? ''}${spiel.schwarz ? `_vs_${spiel.schwarz}` : ''}`;
+    name.target = '_blank';
+    name.rel = 'noopener';
+    name.textContent = `${spiel.weiss ?? '?'}${spiel.weissRating ? ` (${spiel.weissRating})` : ''} – ${spiel.schwarz ?? '?'}${spiel.schwarzRating ? ` (${spiel.schwarzRating})` : ''}`;
+    const ergebnis = document.createElement('span');
+    ergebnis.className = 'ergebnis';
+    ergebnis.textContent = spiel.ergebnis ?? '';
+    const jahr = document.createElement('span');
+    jahr.className = 'ergebnis';
+    jahr.textContent = spiel.datum ? String(spiel.datum).slice(0, 4) : '';
+    zeile.append(name, ergebnis, jahr);
+    spielFrag.append(zeile);
+  }
+  $('explorerSpiele').replaceChildren(spielFrag);
+}
+
+function anteilProzent(weiss, schwarz, remp, schwarzZahl) {
+  const summe = weiss + schwarz + (remp ?? 0);
+  if (!summe) return '';
+  return `${Math.round((weiss / summe) * 100)}% / ${Math.round((schwarzZahl / summe) * 100)}%`;
+}
+
+el.explorerAnmelden.addEventListener('click', explorerAnmelden);
+el.explorerAbmelden.addEventListener('click', explorerAbmelden);
+
+for (const knopf of document.querySelectorAll('.reiter-knopf')) {
+  knopf.addEventListener('click', () => {
+    for (const kind of document.querySelectorAll('.reiter-knopf')) kind.classList.remove('aktiv');
+    knopf.classList.add('aktiv');
+    S.quelle = knopf.dataset.quelle;
+    explorerFragen();
+  });
+}
+
+el.sortieren.addEventListener('click', () => {
+  X.sortierung = X.sortierung === 'games' ? 'teil' : 'games';
+  if (S.explorerLetzte) explorerZeichnen(S.explorerLetzte);
+});
+
 // ------------------------------------------------------------------ Engine
 
-/** Wie eine Bewertung bei lichess aussieht: +1.35, M5, -0.02, ∞ */
+/**
+ * Stockfish meldet die Bewertung aus Sicht der Partei am Zug. Auf der Seite
+ * steht aber immer die Sicht von Weiss - sonst zeigt die Seite nach
+ * 1. e4 e5 2. Nf3 "schwarz +0.23", weil Schwarz am Zug ist. Bei Matt gilt
+ * dasselbe: "mate 3" heisst "in drei Zügen matt" fuer die Partei am Zug.
+ */
+function ausSichtVonWeiss(cp, mate) {
+  if (S.pos.turn !== BLACK) return { cp, mate };
+  return {
+    cp: typeof cp === 'number' ? -cp : cp,
+    mate: typeof mate === 'number' ? -mate : mate,
+  };
+}
+
+/** Wie eine Bewertung bei lichess aussieht: +1.35, M5, -0.02 */
 function bewertungAnzeigen(cp, mate) {
   if (typeof mate === 'number') return `M${mate > 0 ? '+' : ''}${mate}`;
   if (typeof cp === 'number') return `${cp > 0 ? '+' : ''}${(cp / 100).toFixed(2)}`;
@@ -792,7 +1068,8 @@ function engineZeichnen() {
     zeile.className = i === 0 ? 'engine-zeile beste' : 'engine-zeile';
     const wert = document.createElement('span');
     wert.className = 'engine-wert';
-    wert.textContent = bewertungAnzeigen(linie.cp, linie.mate);
+    const sicht = ausSichtVonWeiss(linie.cp, linie.mate);
+    wert.textContent = bewertungAnzeigen(sicht.cp, sicht.mate);
     const zug = document.createElement('span');
     zug.className = 'engine-zug';
     zug.textContent = linie.pgn || (i === 0 && linie.uci ? linie.uci : '');
@@ -898,6 +1175,10 @@ function enginePfeilSetzen() {
 
 el.engineSchalter.addEventListener('click', engineAnAus);
 
+// Der Haken aendert nur eine Checkbox - ohne Neuzeichnen merkt das Brett
+// davon nichts, und die Beschriftung bleibt einfach stehen.
+el.setKoordinaten.addEventListener('change', () => zeichne());
+
 // ------------------------------------------------------------------ Einstellungen
 
 /** Knopfreihe aus Werten, wie im Dialog auf den Screenshots. */
@@ -917,6 +1198,28 @@ function knopfReihe(container, werte, gewaehlt, anzeigen) {
   }
 }
 
+/** Die drei Seitenthes wie im Einstellungsfenster auf den Screenshots. */
+const SEITEN_THEMEN = {
+  dark: { name: 'Default', farben: { '--seite': '#000000', '--panel': '#262421', '--panel-2': '#302e2c', '--schrift': '#bababa' } },
+  fire: { name: 'Fire', farben: { '--seite': '#16100e', '--panel': '#2a1d18', '--panel-2': '#382720', '--schrift': '#e6d2c4' } },
+  emerald: { name: 'Emerald', farben: { '--seite': '#0b1410', '--panel': '#152320', '--panel-2': '#1d312b', '--schrift': '#cfe3d8' } },
+};
+
+function seitenThemaSetzen(id) {
+  const thema = SEITEN_THEMEN[id];
+  if (!thema) return;
+  S.seitenThema = id;
+  // Die Markierung sitzt an den Knoepfen des Dialogs - ohne das zeigte kein
+  // Knopf an, welches Thema gewaehlt ist.
+  for (const knopf of el.setSeite?.children ?? []) {
+    knopf.classList.toggle('an', knopf.textContent === thema.name);
+  }
+  for (const [name, wert] of Object.entries(thema.farben)) {
+    document.documentElement.style.setProperty(name, wert);
+  }
+  localStorage.setItem('lp-brett-thema', id);
+}
+
 const THEMEN = [
   { name: 'brown', hell: '#f0d9b5', dunkel: '#b58863' },
   { name: 'green', hell: '#eeeed2', dunkel: '#779556' },
@@ -933,7 +1236,9 @@ function einstellungenFuellen() {
   for (const v of VERFUEGBARE_VERSIONEN) {
     const o = document.createElement('option');
     o.value = v.id;
-    o.textContent = `${v.name} (${v.groesseHinweis})`;
+    // v.name enthaelt die Groesse bereits - sie hier noch einmal
+    // anzusetzen ergab "(1,7 MB) (1,7 MB)".
+    o.textContent = v.name;
     el.setVersion.append(o);
   }
   knopfReihe(el.setTiefe, [20, 30, 40], E.tiefe, (v) => {
@@ -968,36 +1273,39 @@ function einstellungenFuellen() {
     });
     el.setBoard.append(b);
   }
+  // Figurensaetze: installiert ist derzeit nur Cburnett. Die anderen beiden
+  // Knöpfe sind deaktiviert und sagen, warum - ein Knopf, der aussieht wie
+  // ein Schalter und nichts tut, ist das Schlimmste an einer Oberflaeche.
   el.setFiguren.replaceChildren();
-  for (const [id, name] of [
-    ['classic', 'Classic'],
-    ['maestro', 'Maestro'],
-    ['retro', 'Retro'],
+  for (const [id, name, da] of [
+    ['classic', 'Classic', true],
+    ['maestro', 'Maestro', false],
+    ['retro', 'Retro', false],
   ]) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = name;
-    b.className = id === 'classic' ? 'an' : '';
-    b.addEventListener('click', () => {
-      for (const kind of el.setFiguren.children) kind.classList.remove('an');
-      b.classList.add('an');
-    });
-    el.setFiguren.append(b);
+    const knopf = document.createElement('button');
+    knopf.type = 'button';
+    knopf.textContent = name;
+    knopf.className = da ? 'an' : '';
+    if (!da) {
+      knopf.disabled = true;
+      knopf.title = 'Dieser Figurensatz ist noch nicht installiert.';
+    } else {
+      knopf.addEventListener('click', () => {
+        for (const kind of el.setFiguren.children) kind.classList.remove('an');
+        knopf.classList.add('an');
+      });
+    }
+    el.setFiguren.append(knopf);
   }
   el.setSeite.replaceChildren();
-  for (const [id, name] of [
-    ['dark', 'Default'],
-    ['fire', 'Fire'],
-    ['emerald', 'Emerald'],
-  ]) {
+  for (const [id, thema] of Object.entries(SEITEN_THEMEN)) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = name;
-    b.className = id === 'dark' ? 'an' : '';
-    b.addEventListener('click', () => {
-      for (const kind of el.setSeite.children) kind.classList.remove('an');
-      b.classList.add('an');
-    });
+    // `name` waere hier das ganze Objekt gewesen - im Dialog stand
+    // "[object Object]".
+    b.textContent = thema.name;
+    b.className = id === S.seitenThema ? 'an' : '';
+    b.addEventListener('click', () => seitenThemaSetzen(id));
     el.setSeite.append(b);
   }
 }
@@ -1113,7 +1421,42 @@ document.addEventListener('keydown', (e) => {
 
 // ------------------------------------------------------------------ Start
 
+// Das gewaehlte Seitenthema merken - wie bei lichess bleibt es beim
+// naechsten Aufruf stehen.
+try {
+  const gemerkt = localStorage.getItem('lp-brett-thema');
+  if (gemerkt && SEITEN_THEMEN[gemerkt]) {
+    seitenThemaSetzen(gemerkt);
+    S.seitenThema = gemerkt;
+  }
+} catch {
+  /* localStorage kann blockiert sein - dann bleibt es beim Standard */
+}
+
 baueBrett();
 hilfeFuellen();
 einstellungenFuellen();
 lade(adresseLesen() ?? startFen());
+
+// Anmeldung: nach dem Rueckkehr von lichess steht ?code=...&state=... in der
+// Adresse. Das wird hier erledigt - vorher waere die Seite in einem Zustand,
+// in dem sie selbst nicht weiss, ob sie angemeldet ist.
+(async () => {
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.has('code') || params.has('error')) {
+      const ergebnis = await anmeldenFortsetzen();
+      sag(ergebnis?.nutzername ? `Angemeldet als ${ergebnis.nutzername}.` : 'Angemeldet.', 'ok');
+    }
+  } catch (fehler) {
+    sag(`Anmeldung fehlgeschlagen: ${fehler.message}`, 'fehler');
+  }
+  if (istAngemeldet()) {
+    explorerAbmeldeStand();
+    const st = tokenStatus();
+    if (st?.nutzername) sag(`Angemeldet als ${st.nutzername}.`, 'ok');
+  } else {
+    explorerAnmeldeZeile('Log in, um die Eröffnungsdatenbank zu sehen.');
+  }
+  explorerFragen();
+})();
