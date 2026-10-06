@@ -1,36 +1,69 @@
-/* Analysis board - Aufbau und Farben wie auf lichess.org.
+/*
+ * Analysebrett - Aufbau nach den Screenshots, die der Nutzer als Vorbild
+ * gegeben hat. Alle Zahlen sind aus den Bildern ausgemessen und stehen in
+ * build/bilder/soll.json; build/bildtest.mjs vergleicht sie zur Laufzeit.
  *
- * Bewusst nachgebaut und nicht kopiert: die Farbwerte, Radien, Abstände und
- * der Rhythmus sind dieselben, damit es sich gleich anfuehlt. Der CSS von
- * lichess selbst ist deren eigenes Werk und darf nicht einfach uebernommen
- * werden - die Nachbauweise hier ist ein Nachbau.
+ * Nachgebaut, nicht kopiert: Farbwerte, Radien, Abstaende und der Rhythmus
+ * sind dieselben, damit es sich gleich anfuehlt. Der CSS von lichess selbst
+ * ist deren eigenes Werk.
  */
 
 :root {
   color-scheme: dark;
-  --bg: #161512;
-  --bg-2: #262421;
-  --bg-3: #302e2c;
-  --fg: #bababa;
-  --fg-dim: #787878;
+
+  /* Grundflaechen */
+  --seite: #000000;
+  --panel: #262421;
+  --panel-2: #302e2c;
   --linie: #403e3b;
-  --blau: #3692e7;
-  --gruen: #629924;
+  --schrift: #bababa;
+  --schrift-matt: #787878;
+
+  /* Aktionen */
+  --blau: #5c80c8;
+  --blau-2: #4c6697;
+  --gruen: #35a62a;
+  --gruen-pfeil: #34a428;
+  --orange: #ff9800;
+  --rot: #f44336;
+  --positiv: #4caf50;
+
+  /* Brett */
   --hell: #f0d9b5;
   --dunkel: #b58863;
+  --koordinate-hell: #6b5a49;
+  --koordinate-dunkel: #f0d9b5;
+
   --tap: 46px;
+
+  /* Aus den Bildern gemessen: 808 px bei 1920 breitem Fenster.
+     Das max() ist wichtig, nicht defensiv: ohne die Klammer wird die
+     Formel bei schmalen Fenstern negativ, min() gibt dann einen negativen
+     Wert heraus, und width faellt auf "auto" zurueck - das Brett waechst
+     dann auf die Breite seines Inhalts und schiebt die Seite seitlich. */
+  --brett-groesse: max(320px, min(808px, calc(100vw - 620px), calc(100dvh - 90px)));
+  --panel-breite: 520px;
+  --luecke: 31px;
+  --leiste: 27px;
+  --fen-hoehe: 32px;
+  --knopf-hoehe: 24px;
+  --engine-hoehe: 114px;
+  --zug-hoehe: 23px;
+  --reiter-hoehe: 36px;
+  --kopf-hoehe: 18px;
+  --zeile-abstand: 33px;
+  --unten-hoehe: 46px;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #f0f0f0;
-    --bg-2: #ffffff;
-    --bg-3: #e9e9e9;
-    --fg: #403d39;
-    --fg-dim: #787878;
+    --seite: #f0f0f0;
+    --panel: #ffffff;
+    --panel-2: #f5f5f5;
     --linie: #d9d7d5;
-    --blau: #3692e7;
+    --schrift: #403d39;
+    --schrift-matt: #787878;
   }
 }
 
@@ -45,11 +78,11 @@ body {
 }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--seite);
+  color: var(--schrift);
   font-family: 'Noto Sans', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: 15px;
+  line-height: 1.35;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -60,75 +93,39 @@ body {
   overflow: hidden;
 }
 
-/* ------------------------------------------------------------------ Kopf */
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
 
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
+/* ================================================================ Aufbau */
+
+.lage {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  height: 52px;
-  padding: 0 0.7rem;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--linie);
-}
-
-.topbar h1 {
-  flex: 1;
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 500;
-}
-
-.topbar .home {
-  display: grid;
-  place-items: center;
-  width: var(--tap);
-  height: var(--tap);
-  color: var(--fg-dim);
-  font-size: 1.7rem;
-  line-height: 1;
-  text-decoration: none;
-  border-radius: 4px;
-}
-
-.turn {
-  min-width: 2.2rem;
-  padding: 0.25rem 0.5rem;
-  font-size: 1.5rem;
-  line-height: 1;
-  text-align: center;
-  background: var(--bg-3);
-  border: 1px solid var(--linie);
-  border-radius: 4px;
-}
-
-.turn.schwarz {
-  color: #000;
-  background: #555;
-}
-
-/* ------------------------------------------------------------------ Brett */
-
-main {
-  max-width: 720px;
+  align-items: flex-start;
+  gap: var(--luecke);
+  width: fit-content;
   margin: 0 auto;
-  padding: 0.7rem 0.6rem 2rem;
+  padding: 20px 16px 24px;
 }
 
-.board-wrap {
+.brett-halter {
   position: relative;
+  width: var(--brett-groesse);
+  flex: 0 0 auto;
 }
 
-.board {
+/* ================================================================ Brett */
+
+.brett {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   grid-template-rows: repeat(8, 1fr);
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
   touch-action: none;
   user-select: none;
@@ -137,9 +134,9 @@ main {
 
 .feld {
   position: relative;
-  /* Ein <button> bringt von Haus aus Rahmen, Innenabstand und Schrift mit.
-     Ohne diese drei Zeilen sind die Fugen zwischen den Feldern sichtbar und
-     das Brett sieht wie ein Gitter aus statt wie ein Brett. */
+  /* Ein <button> bringt Rahmen, Innenabstand und Schrift mit. Ohne diese
+     Zeilen sind die Fugen zwischen den Feldern sichtbar und das Brett sieht
+     aus wie ein Gitter. */
   margin: 0;
   padding: 0;
   border: 0;
@@ -150,34 +147,27 @@ main {
   cursor: pointer;
 }
 
-/* Beim Tastaturbedienen soll man sehen, wo man ist - aber ohne Rahmen
-   im Normalfall, sonst gibt es überall Linien. */
 .feld:focus-visible {
   outline: 2px solid var(--blau);
   outline-offset: -2px;
   z-index: 2;
 }
 
-.feld:nth-child(16n + 2),
-.feld:nth-child(16n + 4),
-.feld:nth-child(16n + 6),
-.feld:nth-child(16n + 8),
-.feld:nth-child(16n + 9),
-.feld:nth-child(16n + 11),
-.feld:nth-child(16n + 13),
-.feld:nth-child(16n + 15) {
+.feld.dunkel {
   background: var(--dunkel);
 }
 
+/* Letzter Zug */
 .feld.hervor {
-  /* der letzte Zug */
   box-shadow: inset 0 0 0 100px rgb(255 213 89 / 22%);
 }
 
+/* Auswahl */
 .feld.gewaehlt {
   box-shadow: inset 0 0 0 100px rgb(255 213 89 / 45%);
 }
 
+/* Schach */
 .feld.schach {
   background: radial-gradient(circle at 50% 50%, rgb(255 60 60 / 55%), rgb(255 60 60 / 12%) 70%);
 }
@@ -199,12 +189,31 @@ main {
   opacity: 0.35;
 }
 
+.feld .figur.ziel {
+  animation: einsetzen 0.18s ease-out;
+}
+
+@keyframes einsetzen {
+  from {
+    transform: scale(0.82);
+    opacity: 0.4;
+  }
+}
+
+.feld .figur.schlagrune::after {
+  content: '';
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 58%, rgb(0 0 0 / 26%) 60%);
+}
+
 .feld .koordinate {
   position: absolute;
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 1;
-  opacity: 0.55;
+  opacity: 0.6;
   pointer-events: none;
 }
 
@@ -219,14 +228,15 @@ main {
 }
 
 .feld.hell .koordinate {
-  color: #6b5a49;
+  color: var(--koordinate-hell);
 }
 
 .feld.dunkel .koordinate {
-  color: #f0d9b5;
+  color: var(--koordinate-dunkel);
 }
 
-/* moeglicher Zug: Punkt ins leere Feld, Ring um ein besetztes */
+/* Moeglicher Zug: Punkt ins leere Feld, Ring um ein besetztes. Der Ring
+   gehoert NUR auf ein Feld, auf dem wirklich etwas steht. */
 .feld .hinweis {
   position: absolute;
   inset: 0;
@@ -252,8 +262,22 @@ main {
   border: 6px solid rgb(0 0 0 / 22%);
 }
 
-/* Die Figur, die am Finger klebt. Nur waehrend eines Ziehens sichtbar, und
- * ueber allem anderen - sonst verschwindet sie hinter dem Brett. */
+/* Zeichnen: Pfeile und Kreise liegen ueber den Feldern */
+.brett .zeichen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.brett .zeichen svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Die Figur, die am Finger klebt */
 .geist {
   position: fixed;
   z-index: 50;
@@ -269,7 +293,23 @@ main {
   height: 100%;
 }
 
-/* ------------------------------------------------------------------ Umbau */
+/* Meldung unter dem Brett */
+.brett-bescheid {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--schrift-matt);
+}
+
+.brett-bescheid.fehler {
+  color: var(--rot);
+}
+
+.brett-bescheid.ok {
+  color: var(--gruen);
+}
+
+/* ================================================================ Umbau */
 
 .promo {
   position: absolute;
@@ -277,25 +317,25 @@ main {
   z-index: 30;
   display: grid;
   place-items: center;
-  background: rgb(0 0 0 / 45%);
+  background: rgb(0 0 0 / 55%);
 }
 
 .promo[hidden] {
   display: none;
 }
 
-.promo-inner {
+.promo-kasten {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   padding: 0.6rem;
-  background: var(--bg-2);
+  background: var(--panel);
   border-radius: 6px;
 }
 
 .promo-titel {
   font-size: 0.8rem;
-  color: var(--fg-dim);
+  color: var(--schrift-matt);
 }
 
 .promo-stuecke {
@@ -307,7 +347,7 @@ main {
   width: 64px;
   height: 64px;
   padding: 0;
-  background: var(--bg-3);
+  background: var(--panel-2);
   border: 1px solid var(--linie);
   border-radius: 4px;
   cursor: pointer;
@@ -318,189 +358,801 @@ main {
   height: 82%;
 }
 
-/* ------------------------------------------------------------------ Leiste */
+/* ================================================================ Spalte */
+
+.werkzeug {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-breite);
+  height: var(--brett-groesse);
+  overflow: hidden;
+  background: var(--panel);
+  border-radius: 3px;
+}
+
+/* --- Werkzeugleiste --------------------------------------------------- */
 
 .leiste {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  margin: 0.6rem 0;
+  gap: 0.5rem;
+  height: var(--leiste);
+  padding: 0 8px;
+  flex: 0 0 auto;
 }
 
-.knopf {
-  min-width: var(--tap);
-  min-height: var(--tap);
-  padding: 0 0.7rem;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.95rem;
-  background: var(--bg-3);
-  border: 1px solid var(--linie);
-  border-radius: 4px;
+.schalter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--schrift-matt);
+}
+
+.schalter[aria-checked='true'] {
+  color: var(--gruen);
+}
+
+.kugel {
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  background: #55534f;
+  position: relative;
+  transition: background 0.12s;
+}
+
+.kugel::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #f5f5f5;
+  transition: left 0.12s;
+}
+
+.schalter[aria-checked='true'] .kugel {
+  background: var(--gruen);
+}
+
+.schalter[aria-checked='true'] .kugel::after {
+  left: 16px;
+}
+
+.pfeil,
+.rad {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  color: var(--schrift-matt);
   cursor: pointer;
 }
 
-.knopf:active {
-  background: var(--bg);
+.rad {
+  margin-left: auto;
+  font-size: 1.1rem;
 }
 
-.knopf:disabled {
-  opacity: 0.4;
-  cursor: default;
+/* --- FEN -------------------------------------------------------------- */
+
+.fenreihe {
+  height: var(--fen-hoehe);
+  padding: 0 8px 6px;
+  flex: 0 0 auto;
+  display: flex;
 }
 
-.knopf.breit {
+.fenreihe input {
   flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--linie);
+  border-radius: 3px;
+  font-size: 0.85rem;
 }
 
-.knopf.voll {
-  width: 100%;
+.fenreihe input:focus {
+  outline: 1px solid var(--blau);
+  outline-offset: -1px;
 }
 
-.knopf:hover {
-  border-color: var(--blau);
+/* --- Knopfreihe ------------------------------------------------------- */
+
+.knopfreihe {
+  display: flex;
+  gap: 6px;
+  height: var(--knopf-hoehe);
+  padding: 0 8px 8px;
+  flex: 0 0 auto;
 }
 
-.stand {
-  min-width: 4.5rem;
-  font-size: 0.9rem;
+.blau {
+  flex: 1;
+  height: var(--knopf-hoehe);
+  padding: 0;
+  background: var(--blau);
+  border: 0;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.blau:hover {
+  background: var(--blau-2);
+}
+
+/* --- Engine ----------------------------------------------------------- */
+
+.engine {
+  height: var(--engine-hoehe);
+  flex: 0 0 auto;
+  overflow: auto;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--linie);
+  font-size: 0.8rem;
+}
+
+.engine:empty {
+  border-bottom: 0;
+}
+
+.engine-zeile {
+  display: flex;
+  gap: 8px;
+  padding: 1px 8px;
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+}
+
+.engine-zeile.beste {
+  border-left-color: var(--rot);
+}
+
+.engine-wert {
+  min-width: 3.4em;
+  color: var(--orange);
+  text-align: right;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-  color: var(--fg-dim);
 }
 
-/* ------------------------------------------------------------------ Zuege */
+.engine-zeile.beste .engine-wert {
+  color: var(--positiv);
+}
+
+.engine-zug {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.engine-info {
+  padding: 2px 8px;
+  color: var(--schrift-matt);
+  font-variant-numeric: tabular-nums;
+}
+
+.engine-wartet {
+  padding: 6px 8px;
+  color: var(--schrift-matt);
+}
+
+/* --- Zugsliste ------------------------------------------------------- */
 
 .zuege {
-  display: grid;
-  grid-template-columns: 2.4rem 1fr 1fr;
-  gap: 1px 0.2rem;
-  margin: 0 0 0.8rem;
-  padding: 0.3rem;
-  list-style: none;
-  background: var(--bg-2);
-  border: 1px solid var(--linie);
-  border-radius: 4px;
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow: auto;
+  padding: 4px 0;
 }
 
-.zuege li {
-  display: contents;
+.zug-zeile {
+  display: flex;
+  align-items: stretch;
+  min-height: var(--zug-hoehe);
 }
 
-.zuege .nummer {
-  padding: 0.25rem 0.3rem;
-  font-size: 0.85rem;
+.zug-nummer {
+  flex: 0 0 34px;
+  padding: 3px 6px 0 0;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  color: var(--fg-dim);
+  color: var(--schrift-matt);
 }
 
-.zuege button {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 0.5rem;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.95rem;
-  text-align: left;
+.zug-knoepfe {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.zug-knopf {
+  min-width: 34px;
+  min-height: 22px;
+  padding: 1px 5px;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+  color: var(--schrift);
+  cursor: pointer;
+}
+
+.zug-knopf:hover {
+  background: var(--panel-2);
+}
+
+.zug-knopf.an {
+  background: var(--gruen);
+  color: #fff;
+}
+
+.zug-knopf.zweig {
+  color: #d0d0d0;
+}
+
+/* --- Datenbank ------------------------------------------------------- */
+
+.explorer {
+  flex: 0 0 auto;
+  max-height: 45%;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--linie);
+  overflow: hidden;
+}
+
+.reiter {
+  display: flex;
+  align-items: stretch;
+  height: var(--reiter-hoehe);
+  flex: 0 0 auto;
+}
+
+.reiter-knopf {
+  flex: 1;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--schrift-matt);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.reiter-knopf.aktiv {
+  background: var(--blau);
+  color: #fff;
+}
+
+.reiter-rad {
+  width: 30px;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--linie);
+  color: var(--schrift-matt);
+  cursor: pointer;
+}
+
+.tabellen-kopf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--kopf-hoehe);
+  padding: 0 8px;
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  color: var(--schrift-matt);
+}
+
+.tabellen-kopf span {
+  min-width: 34px;
+}
+
+.tabellen-kopf span.schmal {
+  min-width: 26px;
+}
+
+.sortieren {
+  margin-left: auto;
+  padding: 0 4px;
+  background: none;
+  border: 1px solid var(--linie);
+  border-radius: 2px;
+  font-size: 0.68rem;
+  color: var(--schrift-matt);
+  cursor: pointer;
+}
+
+.tabelle-korper {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.explorer-zeile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--zeile-abstand);
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.explorer-zeile:hover {
+  background: var(--panel-2);
+}
+
+.explorer-zeile .zug {
+  min-width: 40px;
+  color: var(--orange);
+}
+
+.explorer-zeile .bewertung {
+  min-width: 42px;
+  text-align: right;
+  color: var(--positiv);
+  font-variant-numeric: tabular-nums;
+}
+
+.explorer-zeile .negativ {
+  color: var(--rot);
+}
+
+.explorer-zeile .spiele-zahl {
+  min-width: 74px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.explorer-zeile .anteil {
+  min-width: 30px;
+  text-align: right;
+  color: var(--blau);
+}
+
+.explorer-zeile .novelty {
+  flex: 1;
+  color: var(--schrift);
+}
+
+.balken {
+  flex: 1;
+  height: 14px;
+  min-width: 90px;
+  background: #55534f;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.balken .gewonnen {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: #fff;
+}
+
+.balken .verloren {
+  position: absolute;
+  inset: 0 0 0 auto;
+  background: #1c1c1c;
+}
+
+.balken .grenze {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.balken-text {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  font-size: 0.7rem;
+}
+
+.hinweis {
+  margin: 6px 8px;
+  font-size: 0.8rem;
+  color: var(--schrift-matt);
+}
+
+/* Achtung: eine Klasse mit display:flex schlaegt die eingebaute
+   [hidden]-Regel des Browsers. Die Sigma-Zeile war dadurch sichtbar, obwohl
+   sie als versteckt markiert war - und zeigte eine Null ohne Zahlen. */
+.summe[hidden],
+.spiele[hidden],
+.promo[hidden] {
+  display: none;
+}
+
+.summe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--kopf-hoehe);
+  padding: 0 8px;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  border-top: 1px solid var(--linie);
+}
+
+.summe .zahl {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.spiele {
+  flex: 0 0 auto;
+  max-height: 25%;
+  overflow: auto;
+  border-top: 1px solid var(--linie);
+}
+
+.spiele-kopf {
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.spiel-zeile {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.spiel-zeile a {
+  color: var(--schrift);
+  text-decoration: none;
+}
+
+.spiel-zeile a:hover {
+  text-decoration: underline;
+}
+
+.spiel-zeile .ergebnis {
+  margin-left: auto;
+  color: var(--schrift-matt);
+}
+
+/* --- untere Leiste ---------------------------------------------------- */
+
+.unten {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--unten-hoehe);
+  padding: 0 8px;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--linie);
+}
+
+.unten-knopf,
+.unten-datenbank {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   background: none;
   border: 0;
   border-radius: 3px;
+  color: var(--schrift);
+  font-size: 0.9rem;
   cursor: pointer;
 }
 
-.zuege button:hover {
-  background: var(--bg-3);
+.unten-knopf:hover,
+.unten-datenbank:hover {
+  background: var(--panel-2);
 }
 
-.zuege button.an {
-  background: var(--bg);
-  box-shadow: inset 0 2px 0 var(--gruen);
+.unten-knopf:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
-.zuege .leer {
-  color: var(--fg-dim);
+.unten-datenbank {
+  background: var(--blau);
+  color: #fff;
 }
 
-/* ------------------------------------------------------------------ Karte */
+.trenner {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--linie);
+}
 
-.karte {
+/* ================================================================ Dialog */
+
+.schleier {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 60%);
+}
+
+.schleier[hidden] {
+  display: none;
+}
+
+.dialog-kasten {
+  width: min(480px, 94vw);
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.7rem;
-  background: var(--bg-2);
-  border: 1px solid var(--linie);
+  background: var(--panel);
+  border: 1px solid var(--blau);
   border-radius: 4px;
+}
+
+.dialog-kopf {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--linie);
+}
+
+.dialog-kopf h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--blau);
+}
+
+.dialog-zu {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 0;
+  color: var(--schrift);
+  cursor: pointer;
+}
+
+.dialog-koerper {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 12px 12px;
+}
+
+.gruppe {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--linie);
+}
+
+.gruppe:last-child {
+  border-bottom: 0;
+}
+
+.gruppe h3 {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--blau);
 }
 
 .zeile {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-/* Achtung: .feld ist eine Brettkachel. Die Eingabe heisst darum .eingabe und
-   nicht etwa .feld - sonst frisst diese Regel die Kacheln mit. */
-.eingabe {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.zeile span {
+  width: 90px;
+  color: var(--schrift-matt);
+  font-size: 0.82rem;
 }
 
-.eingabe span {
-  font-size: 0.8rem;
-  color: var(--fg-dim);
-}
-
-.eingabe input {
-  min-height: var(--tap);
-  padding: 0 0.6rem;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.85rem;
-  background: var(--bg-3);
+.zeile select {
+  flex: 1;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--panel-2);
   border: 1px solid var(--linie);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
-.eingabe input:focus {
-  outline: 2px solid var(--blau);
-  outline-offset: -1px;
+.reihe-knoepfe {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.hinweis {
-  min-height: 1.2rem;
-  margin: 0;
+.reihe-knoepfe button {
+  min-width: 44px;
+  height: 28px;
+  padding: 0 10px;
+  background: #444240;
+  border: 1px solid var(--linie);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.reihe-knoepfe button.an {
+  background: var(--blau);
+  border-color: var(--blau);
+  color: #fff;
+}
+
+.felder {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.feld-farbe {
+  height: 30px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.feld-farbe.an {
+  border-color: #fff;
+}
+
+.haken {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 0.85rem;
-  color: var(--fg-dim);
 }
 
-.hinweis.fehler {
-  color: #e2725b;
+.dialog-schliessen {
+  height: 34px;
+  margin: 8px 12px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--linie);
+  border-radius: 3px;
+  cursor: pointer;
 }
 
-.hinweis.ok {
-  color: var(--gruen);
+.hilfe-liste {
+  columns: 2;
+  column-gap: 18px;
+  font-size: 0.85rem;
 }
 
-.fuss {
-  margin: 1rem 0 0;
-  font-size: 0.75rem;
-  color: var(--fg-dim);
+.hilfe-liste div {
+  break-inside: avoid;
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
 }
 
-/* ------------------------------------------------------------------ Ganz gross */
+.hilfe-liste kbd {
+  min-width: 74px;
+  padding: 1px 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--linie);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.78rem;
+}
 
-@media (min-width: 700px) {
-  main {
-    max-width: 640px;
+/* ================================================================ Handy */
+
+@media (max-width: 1100px) {
+  /* Hier nicht 100vw: das enthaelt in Firefox die Bildlaufleiste und macht
+     das Brett 15 px breiter als der sichtbare Bereich - mitten im Bild
+     schoeb es die Seite waagerecht hin und her. */
+  :root {
+    --brett-groesse: 100%;
+    --panel-breite: 100%;
+    --luecke: 12px;
   }
 
-  .brett-zwei {
-    display: grid;
-    grid-template-columns: 1fr 260px;
-    gap: 1rem;
-    align-items: start;
+  .lage {
+    flex-direction: column;
+    align-items: center;
+    /* Hier ausdruecklich 100% und nicht fit-content: fit-content richtet sich
+       nach dem Inhalt, und das Brett ist selbst 100% breit - der Browser
+       loest das aus dem kleinsten Inhalt auf (8 Felder mit je 48,5 px
+       Mindestbreite) und die Seite wird 30 px zu breit. */
+    width: 100%;
+    /* 10 px statt 16: bei 390 px Breite bleiben so 370 px fuer das Brett,
+       und 370/8 = 46 px je Feld. Mit 16 px Rand waeren es 44,75 px - unter
+       dem Mindestmass, mit dem man auf dem Handy danebengreift. */
+    padding: 8px 10px 20px;
+  }
+
+  .brett-halter,
+  .werkzeug {
+    max-width: 100%;
+  }
+
+  .brett-halter {
+    width: 100%;
+    max-width: 560px;
+  }
+
+  .werkzeug {
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+  }
+
+  .zuege {
+    max-height: 40vh;
+  }
+
+  .explorer {
+    max-height: none;
+  }
+
+  /* Auf dem Handy sind die Knöpfe mindestens 46 px hoch - alles darunter
+     trifft man mit dem Finger daneben. Und die Knopfreihe bricht um, weil
+     fuenf beschriftete Knöpfe in 390 px sonst 30 px ueber den Rand hinaus
+     gehen. */
+  .blau {
+    flex: 1 1 28%;
+    min-width: 0;
+    height: var(--tap);
+    font-size: 0.74rem;
+    padding: 0 2px;
+  }
+
+  .knopfreihe {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 5px;
+  }
+
+  .unten-knopf,
+  .unten-datenbank {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .leiste {
+    height: auto;
+    min-height: var(--tap);
+    gap: 4px;
+  }
+
+  .fenreihe {
+    height: auto;
+  }
+
+  .fenreihe input {
+    min-height: var(--tap);
+  }
+
+  .schalter,
+  .pfeil,
+  .rad {
+    min-height: var(--tap);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feld .figur.ziel {
+    animation: none;
+  }
+
+  .kugel,
+  .kugel::after {
+    transition: none;
   }
 }

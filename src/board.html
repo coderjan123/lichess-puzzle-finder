@@ -4,8 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Analysis board</title>
-    <meta name="description" content="A chess board that knows the rules: legal moves only, no engine, no database, works offline." />
-    <meta name="theme-color" content="#161512" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="Chess analysis board: legal moves, engine, opening database, variations. Works offline."
+    />
+    <meta name="theme-color" content="#000000" />
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="board.css" />
@@ -15,54 +18,162 @@
          src/piece/ hier hineingelegt - so kostet jede Figur keinen Request. -->
     <svg id="sprite" aria-hidden="true" focusable="false"><!--PIECES--></svg>
 
-    <header class="topbar">
-      <a class="home" href="./" aria-label="Back to the puzzle finder">‹</a>
-      <h1>Analysis board</h1>
-      <span class="turn" id="turnTag"></span>
-    </header>
-
-    <main>
-      <section class="board-wrap">
-        <div class="board" id="board" role="grid" aria-label="Chess board"></div>
+    <div class="lage">
+      <!-- =========================== Brett =========================== -->
+      <div class="brett-halter">
+        <div id="brett" class="brett" role="grid" aria-label="Chess board">
+          <!--PIECES-->
+        </div>
         <div class="promo" id="promo" hidden role="dialog" aria-label="Choose a piece" aria-modal="true">
-          <div class="promo-inner">
+          <div class="promo-kasten">
             <span class="promo-titel">Promote to</span>
             <div class="promo-stuecke" id="promoStuecke"></div>
           </div>
         </div>
-      </section>
+        <div class="brett-bescheid" id="bescheid" role="status" aria-live="polite"></div>
+      </div>
 
-      <section class="leiste">
-        <button type="button" class="knopf" id="btnStart" title="First" aria-label="Go to the start">⇤</button>
-        <button type="button" class="knopf" id="btnPrev" title="Previous" aria-label="Previous move">◀</button>
-        <span class="stand" id="stand">0/0</span>
-        <button type="button" class="knopf" id="btnNext" title="Next" aria-label="Next move">▶</button>
-        <button type="button" class="knopf" id="btnEnd" title="Last" aria-label="Go to the end">⇥</button>
-      </section>
-
-      <ol class="zuege" id="zuege" aria-label="Moves"></ol>
-
-      <section class="karte">
-        <div class="zeile">
-          <button type="button" class="knopf breit" id="btnZurueck">Undo</button>
-          <button type="button" class="knopf breit" id="btnNeu">New game</button>
-          <button type="button" class="knopf breit" id="btnDrehen">Flip</button>
+      <!-- ======================= Werkzeugspalte ======================= -->
+      <section id="werkzeug" class="werkzeug">
+        <!-- Engine an/aus -->
+        <div class="leiste">
+          <button
+            type="button"
+            class="schalter"
+            id="engineSchalter"
+            role="switch"
+            aria-checked="false"
+          >
+            <span class="kugel"></span>
+            <span id="engineName">Engine off</span>
+          </button>
+          <button type="button" class="pfeil" id="engineWahl" aria-label="Choose engine">
+            Engine ▾
+          </button>
+          <button type="button" class="rad" id="btnEinstellungen" aria-label="Settings" title="Settings">
+            ⚙
+          </button>
         </div>
-        <label class="eingabe">
-          <span>FEN</span>
-          <input id="fen" type="text" spellcheck="false" autocomplete="off" inputmode="text" />
-        </label>
-        <button type="button" class="knopf breit voll" id="btnSetzen">Load position</button>
-        <p class="hinweis" id="hinweis"></p>
-        <button type="button" class="knopf breit voll" id="btnTeilen">Copy link</button>
-      </section>
 
-      <p class=" fuss">
-        Legal moves only. No engine, no opening database, nothing sent anywhere -
-        the position stays on this device.
-        Figures: the Cburnett set by Colin Burnett, CC BY-SA 3.0.
-      </p>
-    </main>
+        <!-- FEN -->
+        <div class="fenreihe">
+          <input
+            id="fen"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Paste your FEN here"
+            aria-label="FEN"
+          />
+        </div>
+
+        <!-- Knopfreihe -->
+        <div class="knopfreihe">
+          <button type="button" class="blau" id="btnFENSetzen">Insert FEN</button>
+          <button type="button" class="blau" id="btnLeer">Reset Board</button>
+          <button type="button" class="blau" id="btnFENKopieren">Copy FEN</button>
+          <button type="button" class="blau" id="btnPGNKopieren">Copy PGN</button>
+          <button type="button" class="blau" id="btnPGNImport">Import PGN</button>
+        </div>
+
+        <!-- Engine -->
+        <div id="engine" class="engine" aria-live="off"></div>
+
+        <!-- Zugsliste / Variantenbaum -->
+        <div id="zuege" class="zuege" aria-label="Moves"></div>
+
+        <!-- Eröffnungsdatenbank -->
+        <div id="explorer" class="explorer">
+          <div class="reiter" role="tablist">
+            <button type="button" class="reiter-knopf" role="tab" data-quelle="elite">Elite</button>
+            <button type="button" class="reiter-knopf" role="tab" data-quelle="corr">CORR</button>
+            <button type="button" class="reiter-knopf" role="tab" data-quelle="2024">2024+</button>
+            <button type="button" class="reiter-knopf" role="tab" data-quelle="tt">TT</button>
+            <button type="button" class="reiter-knopf aktiv" role="tab" data-quelle="lichess">Lichess</button>
+            <button type="button" class="reiter-rad" id="explorerRad" aria-label="Database settings">⚙</button>
+          </div>
+          <div class="tabellen-kopf">
+            <span>Move</span><span>Eval</span><span>Games</span><span class="schmal">Mi</span
+            ><span class="schmal">Ms</span><span>Score</span>
+            <button type="button" class="sortieren" id="btnSortieren" aria-label="Sort">⇅ Sort</button>
+          </div>
+          <div class="tabelle-korper" id="explorerZeilen">
+            <p class="hinweis" id="explorerHinweis">Log in to see the opening database.</p>
+          </div>
+          <div class="summe" id="explorerSumme" hidden>
+            <span>Σ</span><span class="wert">100%</span><span class="zahl" id="summeZahl">0</span>
+          </div>
+          <div class="spiele">
+            <div class="spiele-kopf">Lichess games</div>
+            <div id="explorerSpiele"></div>
+          </div>
+        </div>
+
+        <!-- untere Werkzeugleiste -->
+        <div class="unten">
+          <button type="button" class="unten-datenbank" id="btnDatenbank" aria-label="Database">🗄</button>
+          <span class="trenner"></span>
+          <button type="button" class="unten-knopf" id="btnStart" title="First" aria-label="Go to the start">◀◀</button>
+          <button type="button" class="unten-knopf" id="btnZurueck" title="Back" aria-label="Previous move">◀</button>
+          <button type="button" class="unten-knopf" id="btnWeiter" title="Forward" aria-label="Next move">▶</button>
+          <button type="button" class="unten-knopf" id="btnEnde" title="Last" aria-label="Go to the end">▶▶</button>
+          <span class="trenner"></span>
+          <button type="button" class="unten-knopf" id="btnDrehen" title="Flip board" aria-label="Flip board">⟳</button>
+          <button type="button" class="unten-knopf" id="btnSpeichern" title="Save PGN" aria-label="Save PGN">💾</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Dialog: Einstellungen -->
+    <div class="schleier" id="dialog" hidden role="dialog" aria-modal="true" aria-labelledby="dialogTitel">
+      <div class="dialog-kasten">
+        <div class="dialog-kopf">
+          <h2 id="dialogTitel">Settings</h2>
+          <button type="button" class="dialog-zu" id="dialogZu" aria-label="Close">✕</button>
+        </div>
+        <div class="dialog-koerper" id="dialogKoerper">
+          <section class="gruppe">
+            <h3>Engine</h3>
+            <label class="zeile"
+              ><span>Version</span>
+              <select id="setVersion"></select>
+            </label>
+            <div class="reihe-knoepfe" id="setTiefe" role="group" aria-label="Depth"></div>
+            <div class="reihe-knoepfe" id="setZeilen" role="group" aria-label="Lines"></div>
+            <div class="reihe-knoepfe" id="setThreads" role="group" aria-label="Threads"></div>
+            <div class="reihe-knoepfe" id="setZeit" role="group" aria-label="Max time"></div>
+          </section>
+          <section class="gruppe">
+            <h3>Board</h3>
+            <div class="felder" id="setBoard"></div>
+          </section>
+          <section class="gruppe">
+            <h3>Pieces</h3>
+            <div class="reihe-knoepfe" id="setFiguren" role="group" aria-label="Pieces"></div>
+          </section>
+          <section class="gruppe">
+            <h3>Board coordinates</h3>
+            <label class="haken"><input type="checkbox" id="setKoordinaten" checked /> Show coordinates</label>
+          </section>
+          <section class="gruppe">
+            <h3>Page theme</h3>
+            <div class="reihe-knoepfe" id="setSeite" role="group" aria-label="Page theme"></div>
+          </section>
+        </div>
+        <button type="button" class="dialog-schliessen" id="dialogFertig">Close Settings</button>
+      </div>
+    </div>
+
+    <!-- Dialog: Hilfe mit allen Tasten -->
+    <div class="schleier" id="hilfe" hidden role="dialog" aria-modal="true" aria-labelledby="hilfeTitel">
+      <div class="dialog-kasten">
+        <div class="dialog-kopf">
+          <h2 id="hilfeTitel">Keyboard shortcuts</h2>
+          <button type="button" class="dialog-zu" id="hilfeZu" aria-label="Close">✕</button>
+        </div>
+        <div class="dialog-koerper hilfe-liste" id="hilfeListe"></div>
+      </div>
+    </div>
 
     <script src="board.js" type="module"></script>
   </body>

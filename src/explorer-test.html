@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eröffnungsdatenbank - Testseite</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --rand: #3a3a3a;
+        --text: #e6e6e6;
+        --gut: #7fc98a;
+        --schlecht: #e08a8a;
+      }
+      body {
+        margin: 0;
+        padding: 1rem;
+        font: 15px/1.5 system-ui, sans-serif;
+        background: #1c1c1c;
+        color: var(--text);
+      }
+      h1 {
+        font-size: 1.2rem;
+        margin: 0 0 0.5rem;
+      }
+      p.hinweis {
+        color: #9a9a9a;
+        margin: 0 0 1rem;
+        font-size: 0.9rem;
+      }
+      section {
+        border: 1px solid var(--rand);
+        border-radius: 6px;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      label {
+        display: block;
+        margin: 0.5rem 0 0.15rem;
+        font-size: 0.85rem;
+        color: #b4b4b4;
+      }
+      input[type='text'],
+      select,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.4rem;
+        background: #111;
+        color: var(--text);
+        border: 1px solid var(--rand);
+        border-radius: 4px;
+        font: inherit;
+      }
+      select[multiple] {
+        min-height: 6rem;
+      }
+      .reihe {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        align-items: flex-end;
+      }
+      .reihe > * {
+        flex: 1 1 8rem;
+      }
+      button {
+        padding: 0.45rem 0.9rem;
+        border: 1px solid var(--rand);
+        border-radius: 4px;
+        background: #2a2a2a;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      pre {
+        margin: 0;
+        padding: 0.6rem;
+        background: #111;
+        border: 1px solid var(--rand);
+        border-radius: 4px;
+        max-height: 26rem;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.8rem;
+      }
+      .zeile {
+        padding: 0.15rem 0;
+      }
+      .gut {
+        color: var(--gut);
+      }
+      .schlecht {
+        color: var(--schlecht);
+      }
+      .klein {
+        font-size: 0.8rem;
+        color: #9a9a9a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Eröffnungsdatenbank von lichess - Testseite</h1>
+    <p class="hinweis">
+      Endpunkte auf <code>explorer.lichess.org</code>. Ohne Anmeldung antworten sie mit HTTP 401, deshalb der
+      OAuth-Fluss mit PKCE. Das Token bleibt im localStorage dieses Geräts. Diese Seite zeigt nie den Inhalt des
+      Tokens - nur ob eines da ist und wann es abläuft.
+    </p>
+
+    <section>
+      <div class="zeile" id="status">Status wird geprüft …</div>
+      <div class="klein" id="endpointZeile"></div>
+      <p>
+        <button id="loginBtn">Einloggen</button>
+        <button id="logoutBtn">Ausloggen</button>
+        <button id="refreshBtn">Status neu lesen</button>
+      </p>
+    </section>
+
+    <section>
+      <label for="fen">FEN</label>
+      <input type="text" id="fen" value="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1" spellcheck="false" />
+      <label for="zuege">Züge (UCI, kommagetrennt, optional)</label>
+      <input type="text" id="zuege" value="d2d4,d7d5,c2c4,c7c6" spellcheck="false" />
+      <label for="anzahl">Anzahl Züge in der Antwort</label>
+      <input type="text" id="anzahl" value="10" />
+      <label for="quellen">Quellen (mehrfach wählbar, Strg/Cmd zum Umschalten)</label>
+      <select id="quellen" multiple></select>
+      <p>
+        <button id="queryBtn">Abfrage testen</button>
+        <button id="cancelBtn">Abbrechen</button>
+        <button id="cacheBtn">Zwischenspeicher leeren</button>
+      </p>
+      <div class="klein">
+        "Spielerdatenbank" braucht zusätzlich einen Spielernamen und eine Farbe - siehe unten.
+      </div>
+      <div class="reihe">
+        <div>
+          <label for="spieler">Spielername (nur TT/Spielerdatenbank)</label>
+          <input type="text" id="spieler" value="revoof" spellcheck="false" />
+        </div>
+        <div>
+          <label for="farbe">Farbe</label>
+          <select id="farbe">
+            <option value="white">weiss</option>
+            <option value="black">schwarz</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="zeile">Ausgabe</div>
+      <pre id="aus">(noch nichts)</pre>
+    </section>
+
+    <script type="module">
+      import {
+        QUELLEN,
+        istAngemeldet,
+        anmelden,
+        anmeldenFortsetzen,
+        abmelden,
+        tokenStatus,
+        abfrage,
+        abfrageUebertragbar,
+        abbrechen,
+        zwischenspeicherLeeren,
+        normiereFen,
+        cacheSchluessel,
+      } from './explorer.js';
+
+      const $ = (id) => document.getElementById(id);
+      const aus = (id, text) => {
+        $(id).textContent = text;
+      };
+
+      for (const q of QUELLEN) {
+        const o = document.createElement('option');
+        o.value = q.id;
+        o.textContent = `${q.name} - ${q.weg} (${q.hinweis})`;
+        $('quellen').appendChild(o);
+      }
+      for (const id of ['elite', 'lichess']) $('quellen').querySelector(`option[value="${id}"]`).selected = true;
+
+      aus(
+        'endpointZeile',
+        QUELLEN.map((q) => `${q.name.padEnd(18)} https://explorer.lichess.org${q.weg}`).join('\n'),
+      );
+
+      function zeigeStatus() {
+        const s = tokenStatus();
+        if (!s.angemeldet) {
+          aus('status', 'Kein Token vorhanden - die Endpunkte antworten mit HTTP 401.');
+          $('loginBtn').disabled = false;
+          $('logoutBtn').disabled = true;
+          return;
+        }
+        const wann = new Date(s.laeuftAbAm).toLocaleString('de-DE');
+        const wer = s.nutzername ? ` als ${s.nutzername}` : '';
+        $('status').className = 'zeile gut';
+        aus('status', `Token vorhanden${wer}, gültig bis ${wann}.`);
+        $('loginBtn').disabled = true;
+        $('logoutBtn').disabled = false;
+      }
+
+      $('loginBtn').addEventListener('click', async () => {
+        try {
+          const r = await anmelden({ fenster: false });
+          aus('aus', `Weiterleitung an ${r.url}\n\nCode und state kommen als ?code=…&state=… zurück.`);
+        } catch (err) {
+          aus('aus', `Anmeldung nicht möglich: ${err.message}`);
+        }
+      });
+
+      $('logoutBtn').addEventListener('click', () => {
+        abmelden();
+        zeigeStatus();
+        aus('aus', 'Token gelöscht.');
+      });
+
+      $('refreshBtn').addEventListener('click', zeigeStatus);
+
+      $('queryBtn').addEventListener('click', async () => {
+        const gewaehlt = [...$('quellen').selectedOptions].map((o) => o.value);
+        const fen = $('fen').value.trim();
+        const zuege = $('zuege').value.split(',').map((z) => z.trim()).filter(Boolean);
+        const anzahl = Number($('anzahl').value) || 12;
+        $('queryBtn').disabled = true;
+        aus('aus', 'frage …');
+        try {
+          const fnenster = normiereFen(fen);
+          const zusatz = { anzahl, spieler: $('spieler').value.trim() || undefined, farbe: $('farbe').value };
+          const start = Date.now();
+          const ergebnis = gewaehlt.length === 1
+            ? { treffer: { [gewaehlt[0]]: await abfrage(fen, { ...zusatz, quelle: gewaehlt[0], zuege }) }, fehler: {} }
+            : await abfrageUebertragbar(fen, { ...zusatz, quellen: gewaehlt, zuege });
+          const dauer = Date.now() - start;
+          aus(
+            'aus',
+            [
+              `FEN (ohne Zähler): ${fnenster}`,
+              `Cache-Schlüssel je Quelle:`,
+              ...Object.keys(ergebnis.treffer).map((id) => `  ${id}: ${cacheSchluessel(fen, id, zuege, anzahl)}`),
+              `angemeldet: ${istAngemeldet()}`,
+              `${dauer} ms`,
+              '',
+              JSON.stringify(ergebnis, (k, v) => (k === 'unbekannt' && Array.isArray(v) && !v.length ? undefined : v), 2),
+            ].join('\n'),
+          );
+        } catch (err) {
+          aus('aus', `Fehler [${err.code || err.name}]: ${err.message}`);
+        } finally {
+          $('queryBtn').disabled = false;
+        }
+      });
+
+      $('cancelBtn').addEventListener('click', () => {
+        const n = abbrechen();
+        aus('aus', `${n} laufende Abfrage(n) abgebrochen.`);
+      });
+
+      $('cacheBtn').addEventListener('click', () => {
+        aus('aus', `${zwischenspeicherLeeren()} Einträge gelöscht.`);
+      });
+
+      // Liegt ?code=… in der Adresse, gehört der zweite Teil des Flusses hierher.
+      const params = new URLSearchParams(location.search);
+      if (params.get('code') || params.get('error')) {
+        anmeldenFortsetzen()
+          .then((r) => aus('aus', JSON.stringify(r, null, 2)))
+          .catch((err) => aus('aus', `Anmeldung unvollständig [${err.code}]: ${err.message}`))
+          .finally(zeigeStatus);
+      }
+      zeigeStatus();
+    </script>
+  </body>
+</html>

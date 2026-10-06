@@ -172,6 +172,22 @@ if (watch) {
   fs.rmSync(path.join(docs, 'board.js'), { force: true });
   fs.rmSync(path.join(docs, 'board.css'), { force: true });
 
+  // Die Engine-Dateien gehoeren nicht gebuendelt in die HTML, sondern liegen
+  // als Dateien daneben: 1,8 MB gehoeren nicht in eine Seite, die sonst
+  // 50 kB gross ist. Sie werden deshalb beim Bauen nur kopiert, und die
+  // Seite laedt sie erst, wenn der Schalter auf "an" steht.
+  const engineOrdner = path.join(src, 'engine');
+  if (fs.existsSync(engineOrdner)) {
+    const ziel = path.join(docs, 'engine');
+    fs.mkdirSync(ziel, { recursive: true });
+    let bytes = 0;
+    for (const datei of fs.readdirSync(engineOrdner)) {
+      fs.copyFileSync(path.join(engineOrdner, datei), path.join(ziel, datei));
+      bytes += fs.statSync(path.join(ziel, datei)).size;
+    }
+    console.log(`docs/engine/: ${fs.readdirSync(ziel).length} Dateien, ${(bytes / 1048576).toFixed(1)} MB (nur bei Bedarf)`);
+  }
+
   const manifestSize = fs.statSync(path.join(docs, 'data', 'manifest.json')).size;
   console.log(`docs/index.html: ${(indexSize / 1024).toFixed(0)} kB (JS ${(jsSize / 1024).toFixed(0)} kB, Manifest ${(manifestSize / 1024).toFixed(0)} kB)`);
   console.log(`docs/board.html: ${(brettSize / 1024).toFixed(0)} kB (JS ${(Buffer.byteLength(brettJs) / 1024).toFixed(0)} kB, Figuren inline)`);

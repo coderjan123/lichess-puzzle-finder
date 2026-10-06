@@ -1,10 +1,9 @@
 /**
- * Analysis board: Brett, Ziehen, Zugsliste, Rückgängig.
+ * Analysebrett: Brett, Ziehen, Zugsliste, Rückgängig, Zeichnen.
  *
  * Die Regeln kommen aus src/chess.js - dort steht der Zuggenerator, der
- * gegen die publicierten Perft-Zahlen und gegen python-chess geprüft ist.
- * Hier ist nur die Oberfläche: was angezeigt wird und was eine Berührung
- * bedeutet.
+ * gegen die publicierten Perft-Zahlen, gegen einen zweiten unabhängigen
+ * Generator und gegen python-chess geprüft ist. Hier ist nur die Oberfläche.
  *
  * Bedienung mit einer Hand: jedes Feld ist mindestens 46 px groß. Ein Zug
  * geht auf zwei Arten - Figur antippen, dann Zielfeld antippen, oder direkt
@@ -14,6 +13,7 @@
  * Maus und Zeiger auf demselben Element stehen bleiben.
  */
 
+import { VERFUEGBARE_VERSIONEN, engineLaden, umgebungsProblem } from './engine.js';
 import {
   parseFen,
   toFen,
@@ -36,6 +36,7 @@ import {
   BISHOP,
   KNIGHT,
   squareName,
+  parseSquare,
   fromIndex,
   toIndex,
 } from './chess.js';
@@ -43,23 +44,70 @@ import {
 const $ = (id) => document.getElementById(id);
 
 const el = {
-  board: $('board'),
+  brett: $('brett'),
   promo: $('promo'),
   promoStuecke: $('promoStuecke'),
   zuege: $('zuege'),
-  stand: $('stand'),
-  turnTag: $('turnTag'),
   fen: $('fen'),
-  hinweis: $('hinweis'),
-  btnZurueck: $('btnZurueck'),
-  btnNeu: $('btnNeu'),
-  btnDrehen: $('btnDrehen'),
-  btnSetzen: $('btnSetzen'),
-  btnTeilen: $('btnTeilen'),
+  bescheid: $('bescheid'),
+  engine: $('engine'),
+  explorerZeilen: $('explorerZeilen'),
+  explorerHinweis: $('explorerHinweis'),
+  explorerSumme: $('explorerSumme'),
+  summeZahl: $('summeZahl'),
+  explorerSpiele: $('explorerSpiele'),
+  btnFENSetzen: $('btnFENSetzen'),
+  btnLeer: $('btnLeer'),
+  btnFENKopieren: $('btnFENKopieren'),
+  btnPGNKopieren: $('btnPGNKopieren'),
+  btnPGNImport: $('btnPGNImport'),
   btnStart: $('btnStart'),
-  btnPrev: $('btnPrev'),
-  btnNext: $('btnNext'),
-  btnEnd: $('btnEnd'),
+  btnZurueck: $('btnZurueck'),
+  btnWeiter: $('btnWeiter'),
+  btnEnde: $('btnEnde'),
+  btnDrehen: $('btnDrehen'),
+  btnSpeichern: $('btnSpeichern'),
+  engineSchalter: $('engineSchalter'),
+  engineName: $('engineName'),
+  dialog: $('dialog'),
+  dialogKoerper: $('dialogKoerper'),
+  dialogFertig: $('dialogFertig'),
+  dialogZu: $('dialogZu'),
+  hilfe: $('hilfe'),
+  hilfeListe: $('hilfeListe'),
+  hilfeZu: $('hilfeZu'),
+  btnEinstellungen: $('btnEinstellungen'),
+  setVersion: $('setVersion'),
+  setTiefe: $('setTiefe'),
+  setZeilen: $('setZeilen'),
+  setThreads: $('setThreads'),
+  setZeit: $('setZeit'),
+  setBoard: $('setBoard'),
+  setFiguren: $('setFiguren'),
+  setKoordinaten: $('setKoordinaten'),
+  setSeite: $('setSeite'),
+};
+
+/**
+ * Engine: an, aus, und was gerade gerechnet wird.
+ *
+ * Die Dateien (1,8 MB) werden erst beim Einschalten geladen - die Seite selbst
+ * bleibt 52 kB. Die Engine meldet ueber `aufInfo` jede Zeile, waehrend sie
+ * rechnet; gesammelt wird hier nur, was gerade der letzte Stand ist.
+ */
+const E = {
+  an: false,
+  laeuft: false,
+  objekt: null,
+  ladeFehler: null,
+  tiefe: 20,
+  maxZeitMs: 8000,
+  mehrzeilen: 3,
+  threads: 1,
+  letzteLinien: [],
+  info: { tiefe: 0, knoten: 0, nps: 0, sekunden: 0 },
+  besterZug: null,
+  rechnet: false,
 };
 
 const BUCHSTABE = { 1: 'P', 2: 'N', 3: 'B', 4: 'R', 5: 'Q', 6: 'K' };
@@ -70,6 +118,34 @@ const UMBAU = [
   [BISHOP, 'bishop'],
   [KNIGHT, 'knight'],
 ];
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+/**
+ * Eine Figur als eigenes `<svg>` mit `<use>` darin.
+ *
+ * Wichtig, und nicht selbstverständlich: ein `<use>` **muss** in einem
+ * `<svg>` stehen. Ohne das umgebende Element gibt es keinen Bezugsrahmen,
+ * 100 % Breite und Höhe lösen sich nirgendwo auf - und der Browser malt
+ * gar nichts. Der erste Wurf hatte ein nacktes `<use>` in einem `<span>`:
+ * das Brett blieb leer, und alle Tests waren grün, weil sie nur gezählt
+ * haben, ob ein Element mit passendem `href` da ist. Deshalb prüft
+ * `bretttest.mjs` jetzt Pixel, nicht Elemente.
+ */
+function figurElement(id) {
+  const svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 45 45');
+  const nutzlast = document.createElementNS(SVGNS, 'use');
+  nutzlast.setAttribute('href', `#${id}`);
+  svg.append(nutzlast);
+  return svg;
+}
+
+/** Nur das `href` erneuern, wenn sich die Figur aendert. */
+function setzeFigur(svg, id) {
+  const nutzlast = svg.firstChild;
+  if (nutzlast.getAttribute('href') !== `#${id}`) nutzlast.setAttribute('href', `#${id}`);
+}
 
 /** Alles, was die Seite weiss. An einer Stelle, damit nichts fehlt. */
 const S = {
@@ -89,35 +165,13 @@ const S = {
   offen: null,
   /** Zeiger: {von, x, y, startX, startY, zieht, startZiel}. */
   griff: null,
+  /** Gezeichnete Pfeile und Kreise. */
+  zeichen: [],
+  /** Nächste Farbe für ein neues Zeichen. */
+  farbeIndex: 0,
 };
 
-const SVGNS = 'http://www.w3.org/2000/svg';
-
-/**
- * Eine Figur als eigenes `<svg>` mit `<use>` darin.
- *
- * Wichtig, und nicht selbstverständlich: ein `<use>` **muss** in einem
- * `<svg>` stehen. Ohne das umgebende Element gibt es keinen Bezugsrahmen,
- * 100 % Breite und Höhe lösen sich nirgendwo auf - und der Browser malt
- * gar nichts. Der erste Wurf hatte ein nacktes `<use>` in einem `<span>`:
- * Das Brett blieb leer, und alle Tests waren grün, weil sie nur gezählt
- * haben, ob ein Element mit passendem `href` da ist. Deshalb prüft
- * `bretttest.mjs` jetzt Pixel, nicht Elemente.
- */
-function figurElement(id) {
-  const svg = document.createElementNS(SVGNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 45 45');
-  const nutzlast = document.createElementNS(SVGNS, 'use');
-  nutzlast.setAttribute('href', `#${id}`);
-  svg.append(nutzlast);
-  return svg;
-}
-
-/** Nur das `href` erneuern, wenn sich die Figur aendert. */
-function setzeFigur(svg, id) {
-  const nutzlast = svg.firstChild;
-  if (nutzlast.getAttribute('href') !== `#${id}`) nutzlast.setAttribute('href', `#${id}`);
-}
+const FARBEN = ['#35a62a', '#4c8fd5', '#d54c3c', '#c9a227'];
 
 const felder = [];
 
@@ -139,7 +193,11 @@ function baueBrett() {
     frag.append(f);
     felder.push(f);
   }
-  el.board.replaceChildren(frag);
+  const ebene = document.createElement('div');
+  ebene.className = 'zeichen';
+  ebene.id = 'zeichenEbene';
+  frag.append(ebene);
+  el.brett.replaceChildren(frag);
 }
 
 /** Index 0 ist die linke obere Ecke in der gezeigten Lage. */
@@ -157,6 +215,7 @@ function zeichne() {
   const letzterVon = S.letzter ? anzeigeIndex(toIndex(moveFrom(S.letzter))) : -1;
   const letzterNach = S.letzter ? anzeigeIndex(toIndex(moveTo(S.letzter))) : -1;
   const gewaehltAnzeige = S.gewaehlt >= 0 ? anzeigeIndex(toIndex(S.gewaehlt)) : -1;
+  const koordinaten = document.getElementById('setKoordinaten');
 
   // i ist der Brettindex (Zeile 0 = die 8. Reihe), d der Anzeigeindex
   // (Zeile 0 = oben). Beide werden gebraucht, und sie sind nicht dasselbe,
@@ -189,9 +248,9 @@ function zeichne() {
       halter.classList.toggle('zieht', Boolean(S.griff?.zieht && S.griff.von === sq));
     }
 
-    // Moeglicher Zug: Punkt ins leere Feld, Ring um ein besetztes.
-    // Der Ring gehoert NUR auf ein Feld, auf dem wirklich etwas steht - sonst
-    // sieht jeder leere Zielpunkt aus wie ein Schlagfeld.
+    // Möglicher Zug: Punkt ins leere Feld, Ring um ein besetztes.
+    // Der Ring gehoert NUR auf ein Feld, auf dem wirklich etwas steht -
+    // sonst sieht jeder leere Zielpunkt aus wie ein Schlagfeld.
     let hinweis = feld.querySelector('.hinweis');
     if (ziele.has(d)) {
       if (!hinweis) {
@@ -205,18 +264,18 @@ function zeichne() {
       feld.classList.remove('besetzt');
     }
 
-    // Koordinaten wie bei lichess nur in den Ecken.
-    // Nach der Klasse fragen, nicht nach der Position: die Figur wird per
-    // prepend eingefuegt und verschiebt sonst alles um eine Stelle.
+    // Koordinaten wie bei lichess nur in den Ecken. Nach der Klasse fragen,
+    // nicht nach der Position: die Figur wird per prepend eingefuegt und
+    // verschiebt sonst alles um eine Stelle.
     const dReihe = d >> 3;
     const dSpalte = d & 7;
     const kR = feld.querySelector('.koordinate.reihe');
     const kS = feld.querySelector('.koordinate.spalte');
-    if ((dReihe === 7 || dReihe === 0) && (dSpalte === 0 || dSpalte === 7)) {
+    const zeige = !koordinaten || koordinaten.checked;
+    if (zeige && (dReihe === 7 || dReihe === 0) && (dSpalte === 0 || dSpalte === 7)) {
       // Die Beschriftung gehoert zu dem Quadrat, das hier liegt - also zu i,
       // dem Brettindex. Spiegeln muss man hier nichts: das Drehen ist
-      // schon ueber d erledigt. Ein zusaetzliches Spiegeln hat die Ecken
-      // vertauscht, oben links stand nach dem Drehen wieder "a8".
+      // schon ueber d erledigt.
       kR.textContent = String.fromCharCode(97 + (i & 7));
       kS.textContent = String(8 - (i >> 3));
       kR.hidden = false;
@@ -234,16 +293,12 @@ function zeichne() {
     );
   }
 
+  zeichenZeichnen();
   zugliste();
-  el.turnTag.textContent = pos.turn === WHITE ? '♙' : '♟';
-  el.turnTag.className = pos.turn === WHITE ? 'turn' : 'turn schwarz';
-  el.turnTag.title = pos.turn === WHITE ? 'White to move' : 'Black to move';
-  el.stand.textContent = `${S.cursor}/${S.verlauf.length}`;
   el.btnZurueck.disabled = S.cursor === 0;
-  el.btnPrev.disabled = S.cursor === 0;
   el.btnStart.disabled = S.cursor === 0;
-  el.btnNext.disabled = S.cursor >= S.verlauf.length;
-  el.btnEnd.disabled = S.cursor >= S.verlauf.length;
+  el.btnWeiter.disabled = S.cursor >= S.verlauf.length;
+  el.btnEnde.disabled = S.cursor >= S.verlauf.length;
 }
 
 // ------------------------------------------------------------------ Stellung
@@ -270,17 +325,14 @@ function lade(fen, { verlauf = null, cursor = null, meldung = null } = {}) {
   }
   el.fen.value = toFen(S.pos);
   zeichne();
+  engineRechnen();
   if (meldung) sag(meldung, 'ok');
   // Eine eingetippte Endstellung sagt von selbst, dass sie zu Ende ist -
   // sonst steht da "Position geladen" und man sucht den Matt vergeblich.
   const ergebnis = outcome(S.pos);
   if (ergebnis) {
     sag(
-      ergebnis === '1/2-1/2'
-        ? 'Draw.'
-        : ergebnis === '1-0'
-          ? 'White wins.'
-          : 'Black wins.',
+      ergebnis === '1/2-1/2' ? 'Draw.' : ergebnis === '1-0' ? 'White wins.' : 'Black wins.',
       ergebnis === '1/2-1/2' ? null : 'ok',
     );
   }
@@ -298,6 +350,8 @@ function spiele(move) {
   S.ziele = [];
   el.fen.value = toFen(S.pos);
   zeichne();
+  adresseSchreiben();
+  engineRechnen();
   const ergebnis = outcome(S.pos);
   if (ergebnis) {
     sag(
@@ -321,6 +375,8 @@ function zurueck() {
   S.ziele = [];
   el.fen.value = toFen(S.pos);
   zeichne();
+  adresseSchreiben();
+  engineRechnen();
 }
 
 /**
@@ -346,6 +402,8 @@ function geheZu(cursor) {
   S.ziele = [];
   el.fen.value = toFen(S.pos);
   zeichne();
+  adresseSchreiben();
+  engineRechnen();
 }
 
 // ------------------------------------------------------------------ Ziehen und Tippen
@@ -358,7 +416,7 @@ function feldUnter(x, y) {
   return feld ? Number(feld.dataset.i) : -1;
 }
 
-el.board.addEventListener('pointerdown', (e) => {
+el.brett.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || S.offen) return;
   const i = feldUnter(e.clientX, e.clientY);
   if (i < 0) return;
@@ -394,13 +452,13 @@ el.board.addEventListener('pointerdown', (e) => {
   // Zeiger nicht aktiv ist (oder es der Test ist), wirft es - und dann darf
   // der Zug nicht hängen bleiben.
   try {
-    el.board.setPointerCapture?.(e.pointerId);
+    el.brett.setPointerCapture?.(e.pointerId);
   } catch {
     /* egal */
   }
 });
 
-el.board.addEventListener('pointermove', (e) => {
+el.brett.addEventListener('pointermove', (e) => {
   const g = S.griff;
   if (!g) return;
   g.x = e.clientX;
@@ -418,7 +476,7 @@ el.board.addEventListener('pointermove', (e) => {
   }
 });
 
-el.board.addEventListener('pointerup', (e) => {
+el.brett.addEventListener('pointerup', (e) => {
   const g = S.griff;
   S.griff = null;
   document.getElementById('geist')?.remove();
@@ -439,7 +497,7 @@ el.board.addEventListener('pointerup', (e) => {
   }
 });
 
-el.board.addEventListener('pointercancel', () => {
+el.brett.addEventListener('pointercancel', () => {
   S.griff = null;
   document.getElementById('geist')?.remove();
   zeichne();
@@ -490,7 +548,6 @@ function zeigeUmbau() {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('aria-label', `Promote to ${name}`);
-    b.dataset.typ = String(typ);
     b.append(figurElement(`${farbe}${BUCHSTABE[typ]}`));
     b.addEventListener('click', () => umbau(typ));
     el.promoStuecke.append(b);
@@ -524,26 +581,19 @@ el.promo.addEventListener('keydown', (e) => {
 
 function zugliste() {
   const frag = document.createDocumentFragment();
-  if (S.verlauf.length === 0) {
-    const li = document.createElement('li');
-    li.className = 'nummer';
-    li.append(document.createElement('span'));
-    const a = document.createElement('span');
-    a.className = 'leer';
-    a.textContent = 'No moves yet';
-    const b = document.createElement('span');
-    frag.append(li, a, b);
-    el.zuege.replaceChildren(frag);
-    return;
-  }
   for (let i = 0; i < S.verlauf.length; i += 2) {
-    const nr = document.createElement('li');
-    nr.className = 'nummer';
+    const zeile = document.createElement('div');
+    zeile.className = 'zug-zeile';
+    const nr = document.createElement('div');
+    nr.className = 'zug-nummer';
     nr.textContent = `${i / 2 + 1}.`;
-    frag.append(nr);
+    zeile.append(nr);
+    const knoepfe = document.createElement('div');
+    knoepfe.className = 'zug-knoepfe';
     for (const j of [i, i + 1]) {
       const knopf = document.createElement('button');
       knopf.type = 'button';
+      knopf.className = 'zug-knopf';
       if (j < S.verlauf.length) {
         knopf.textContent = S.verlauf[j].san;
         if (S.cursor === j + 1) knopf.classList.add('an');
@@ -551,52 +601,519 @@ function zugliste() {
       } else {
         knopf.disabled = true;
       }
-      frag.append(knopf);
+      knoepfe.append(knopf);
     }
+    zeile.append(knoepfe);
+    frag.append(zeile);
+  }
+  if (S.verlauf.length === 0) {
+    const zeile = document.createElement('div');
+    zeile.className = 'zug-zeile';
+    const nr = document.createElement('div');
+    nr.className = 'zug-nummer';
+    nr.textContent = '';
+    const knoepfe = document.createElement('div');
+    knoepfe.className = 'zug-knoepfe';
+    const knopf = document.createElement('button');
+    knopf.type = 'button';
+    knopf.className = 'zug-knopf';
+    knopf.textContent = 'No moves yet';
+    knopf.disabled = true;
+    knoepfe.append(knopf);
+    zeile.append(nr, knoepfe);
+    frag.append(zeile);
   }
   el.zuege.replaceChildren(frag);
 }
 
 function sag(text, art) {
-  el.hinweis.textContent = text || '';
-  el.hinweis.className = art ? art : 'hinweis';
+  el.bescheid.textContent = text || '';
+  el.bescheid.className = art ? `brett-bescheid ${art}` : 'brett-bescheid';
 }
+
+/**
+ * Die Stellung steht in der Adresse, wie bei lichess im Editor (?fen=...).
+ * Kein eigener "Link kopieren"-Knopf: die Adresse ist ohnehin sichtbar, und
+ * ein Link, den man nicht teilen kann, ist keiner. Beim Start wird sie
+ * gelesen - darum muss `ersetzen` erst beim ersten Zug aufgerufen werden,
+ * sonst überschreibt die Seite sofort ihren eigenen Parameter.
+ */
+function adresseSchreiben() {
+  const url = new URL(location.href);
+  url.searchParams.set('fen', toFen(S.pos));
+  history.replaceState(null, '', url);
+}
+
+/** Aus der Adresse lesen: ?fen=… und #fen als Rückfall. */
+function adresseLesen() {
+  const ausParameter = new URL(location.href).searchParams.get('fen');
+  if (ausParameter && ausParameter.includes('/')) return ausParameter;
+  const ausHash = decodeURIComponent(location.hash.replace(/^#/, ''));
+  return ausHash.includes('/') ? ausHash : null;
+}
+
+// ------------------------------------------------------------------ Zeichnen
+
+/** Feldmitte in Pixeln, bezogen auf die Brett-Ebene. */
+function feldMitte(sq) {
+  const d = anzeigeIndex(toIndex(sq));
+  const brett = el.brett.getBoundingClientRect();
+  const feld = brett.width / 8;
+  return {
+    x: (d % 8) * feld + feld / 2,
+    y: Math.floor(d / 8) * feld + feld / 2,
+    feld,
+  };
+}
+
+function zeichenZeichnen() {
+  const ebene = document.getElementById('zeichenEbene');
+  if (!ebene) return;
+  ebene.replaceChildren();
+  if (S.zeichen.length === 0) return;
+  const svg = document.createElementNS(SVGNS, 'svg');
+  for (const z of S.zeichen) {
+    const a = feldMitte(z.von);
+    const b = feldMitte(z.nach);
+    if (z.art === 'kreis') {
+      const k = document.createElementNS(SVGNS, 'circle');
+      k.setAttribute('cx', b.x);
+      k.setAttribute('cy', b.y);
+      k.setAttribute('r', a.feld * 0.46);
+      k.setAttribute('fill', 'none');
+      k.setAttribute('stroke', z.farbe);
+      k.setAttribute('stroke-width', String(Math.max(3, a.feld * 0.06)));
+      svg.append(k);
+      continue;
+    }
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const laenge = Math.hypot(dx, dy) || 1;
+    const kuerzer = a.feld * 0.28;
+    const spitze = { x: b.x - (dx / laenge) * kuerzer, y: b.y - (dy / laenge) * kuerzer };
+    const p = document.createElementNS(SVGNS, 'line');
+    p.setAttribute('x1', String(a.x));
+    p.setAttribute('y1', String(a.y));
+    p.setAttribute('x2', String(spitze.x));
+    p.setAttribute('y2', String(spitze.y));
+    p.setAttribute('stroke', z.farbe);
+    p.setAttribute('stroke-width', String(Math.max(3, a.feld * 0.075)));
+    p.setAttribute('stroke-linecap', 'round');
+    const s = document.createElementNS(SVGNS, 'polygon');
+    const breite = a.feld * 0.16;
+    const senkrecht = { x: (-dy / laenge) * breite, y: (dx / laenge) * breite };
+    s.setAttribute(
+      'points',
+      [
+        `${b.x},${b.y}`,
+        `${spitze.x + senkrecht.x},${spitze.y + senkrecht.y}`,
+        `${spitze.x - senkrecht.x},${spitze.y - senkrecht.y}`,
+      ].join(' '),
+    );
+    s.setAttribute('fill', z.farbe);
+    svg.append(p, s);
+  }
+  ebene.append(svg);
+}
+
+/** Rechtsklick-Werkzeug: zeichnet einen Pfeil oder Kreis. */
+function zeichnenStarten(x, y) {
+  const i = feldUnter(x, y);
+  if (i < 0) return;
+  const sq = fromIndex(i);
+  const von = S.zeichenUrsprung;
+  if (von === null || von === undefined || von === sq) {
+    S.zeichenUrsprung = sq;
+    return;
+  }
+  const gleicheReihe = Math.abs(von - sq) === 16 || Math.abs(von - sq) === 1;
+  const art = Math.abs(toIndex(von) - toIndex(sq)) === 0 ? 'kreis' : gleicheReihe ? 'pfeil' : 'kreis';
+  S.zeichen.push({ art, von, nach: sq, farbe: FARBEN[S.farbeIndex % FARBEN.length] });
+  S.farbeIndex += 1;
+  S.zeichenUrsprung = null;
+  zeichenZeichnen();
+  sag('Right click draws arrows and circles.', null);
+}
+
+el.brett.addEventListener('contextmenu', (e) => e.preventDefault());
+el.brett.addEventListener('mousedown', (e) => {
+  if (e.button !== 2) return;
+  e.preventDefault();
+  zeichnenStarten(e.clientX, e.clientY);
+});
+
+// ------------------------------------------------------------------ Engine
+
+/** Wie eine Bewertung bei lichess aussieht: +1.35, M5, -0.02, ∞ */
+function bewertungAnzeigen(cp, mate) {
+  if (typeof mate === 'number') return `M${mate > 0 ? '+' : ''}${mate}`;
+  if (typeof cp === 'number') return `${cp > 0 ? '+' : ''}${(cp / 100).toFixed(2)}`;
+  return '–';
+}
+
+function engineZeichnen() {
+  if (!E.an) {
+    el.engine.replaceChildren();
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  if (E.ladeFehler) {
+    const p = document.createElement('p');
+    p.className = 'engine-wartet';
+    p.textContent = E.ladeFehler;
+    frag.append(p);
+    el.engine.replaceChildren(frag);
+    return;
+  }
+  if (!E.objekt) {
+    const p = document.createElement('p');
+    p.className = 'engine-wartet';
+    p.textContent = 'Lade Engine … (1,7 MB, nur jetzt)';
+    frag.append(p);
+    el.engine.replaceChildren(frag);
+    return;
+  }
+  if (E.letzteLinien.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'engine-wartet';
+    p.textContent = E.info.tiefe ? `rechnet … Tiefe ${E.info.tiefe}` : 'bereit – spiele einen Zug';
+    frag.append(p);
+  } else if (E.rechnet) {
+    const p = document.createElement('p');
+    p.className = 'engine-wartet';
+    p.textContent = 'rechnet …';
+    frag.append(p);
+  }
+  // Der kuenstliche "bester Zug"-Eintrag ohne pv entfaellt, sobald es eine
+  // echte pv-Zeile gibt - sonst steht der beste Zug zweimal da.
+  const mitPv = E.letzteLinien.filter((l) => l.pgn);
+  (mitPv.length > 0 ? mitPv : E.letzteLinien).forEach((linie, i) => {
+    const zeile = document.createElement('div');
+    zeile.className = i === 0 ? 'engine-zeile beste' : 'engine-zeile';
+    const wert = document.createElement('span');
+    wert.className = 'engine-wert';
+    wert.textContent = bewertungAnzeigen(linie.cp, linie.mate);
+    const zug = document.createElement('span');
+    zug.className = 'engine-zug';
+    zug.textContent = linie.pgn || (i === 0 && linie.uci ? linie.uci : '');
+    zeile.append(wert, zug);
+    frag.append(zeile);
+  });
+  if (E.info.tiefe) {
+    const info = document.createElement('div');
+    info.className = 'engine-info';
+    info.textContent = `Tiefe ${E.info.tiefe} · ${Math.round(E.info.knoten / 1000)}k Knoten · ${Math.round(E.info.nps / 1000)}k nps · ${(E.info.sekunden / 1000).toFixed(1)}s`;
+    frag.append(info);
+  }
+  el.engine.replaceChildren(frag);
+}
+
+/** Die Engine mit der aktuellen Stellung füttern und rechnen lassen. */
+function engineRechnen() {
+  if (!E.an || !E.objekt) return;
+  // Die alten Zeilen bleiben stehen, bis neue kommen. Sie zu loeschen macht
+  // die Leiste bei jedem Zug kurz leer - man sieht dann nichts, waehrend die
+  // Engine ihre rund zwei Sekunden fuer Stopp und Handshake braucht.
+  E.rechnet = true;
+  E.besterZug = null;
+  E.objekt.analysieren({
+    fen: toFen(S.pos),
+    tiefe: E.tiefe,
+    maxZeitMs: E.maxZeitMs,
+    mehrzeilen: E.mehrzeilen,
+    threads: E.threads,
+  });
+  E.laeuft = true;
+  engineZeichnen();
+}
+
+async function engineAnAus() {
+  if (E.an) {
+    E.an = false;
+    try {
+      E.objekt?.stoppen();
+    } catch {
+      /* egal */
+    }
+    el.engineSchalter.setAttribute('aria-checked', 'false');
+    el.engineName.textContent = 'Engine off';
+    engineZeichnen();
+    return;
+  }
+  const problem = umgebungsProblem();
+  if (problem) {
+    E.ladeFehler = problem;
+    engineZeichnen();
+    return;
+  }
+  E.an = true;
+  E.ladeFehler = null;
+  el.engineSchalter.setAttribute('aria-checked', 'true');
+  el.engineName.textContent = 'loading …';
+  engineZeichnen();
+  try {
+    E.objekt = await engineLaden(VERFUEGBARE_VERSIONEN[0], {
+      anzeigen: (text) => sag(text, null),
+    });
+    sag('Engine bereit. Leertaste spielt den besten Zug.', 'ok');
+    E.objekt.aufInfo((info) => {
+      E.letzteLinien = info.mehrzeilen ?? [];
+      E.info = {
+        tiefe: info.tiefe ?? 0,
+        knoten: info.knoten ?? 0,
+        nps: info.nps ?? 0,
+        sekunden: info.sekunden ?? 0,
+      };
+      E.besterZug = info.besterZug ?? null;
+      E.rechnet = false;
+      engineZeichnen();
+      if (E.besterZug) enginePfeilSetzen();
+    });
+    E.objekt.aufFehler((text) => {
+      E.ladeFehler = text;
+      engineZeichnen();
+    });
+    el.engineName.textContent = VERFUEGBARE_VERSIONEN[0].name.replace(' · lite', '');
+    engineRechnen();
+  } catch (fehler) {
+    E.an = false;
+    el.engineSchalter.setAttribute('aria-checked', 'false');
+    E.ladeFehler = fehler instanceof Error ? fehler.message : String(fehler);
+    el.engineName.textContent = 'Engine off';
+    engineZeichnen();
+  }
+}
+
+/** Der beste Zug als grüner Pfeil auf dem Brett - wie auf den Screenshots. */
+function enginePfeilSetzen() {
+  const uci = E.besterZug;
+  if (typeof uci !== 'string' || uci.length < 4) return;
+  const von = parseSquare(uci.slice(0, 2));
+  const nach = parseSquare(uci.slice(2, 4));
+  if (von < 0 || nach < 0) return;
+  S.zeichen = S.zeichen.filter((z) => !z.engine);
+  S.zeichen.push({ art: 'pfeil', von, nach, farbe: '#35a62a', engine: true });
+  zeichenZeichnen();
+}
+
+el.engineSchalter.addEventListener('click', engineAnAus);
+
+// ------------------------------------------------------------------ Einstellungen
+
+/** Knopfreihe aus Werten, wie im Dialog auf den Screenshots. */
+function knopfReihe(container, werte, gewaehlt, anzeigen) {
+  container.replaceChildren();
+  for (const wert of werte) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = String(wert);
+    b.className = wert === gewaehlt ? 'an' : '';
+    b.addEventListener('click', () => {
+      for (const kind of container.children) kind.classList.remove('an');
+      b.classList.add('an');
+      anzeigen(wert);
+    });
+    container.append(b);
+  }
+}
+
+const THEMEN = [
+  { name: 'brown', hell: '#f0d9b5', dunkel: '#b58863' },
+  { name: 'green', hell: '#eeeed2', dunkel: '#779556' },
+  { name: 'blue', hell: '#dde8f5', dunkel: '#7399b5' },
+  { name: 'purple', hell: '#e7dff0', dunkel: '#9a7fb8' },
+  { name: 'grey', hell: '#e9e9e9', dunkel: '#9c9c9c' },
+  { name: 'wood', hell: '#f1ddc0', dunkel: '#c88a52' },
+  { name: 'ocean', hell: '#d7e9e8', dunkel: '#5f8f8b' },
+  { name: 'dark', hell: '#c9c9c9', dunkel: '#5a5a5a' },
+];
+
+function einstellungenFuellen() {
+  el.setVersion.replaceChildren();
+  for (const v of VERFUEGBARE_VERSIONEN) {
+    const o = document.createElement('option');
+    o.value = v.id;
+    o.textContent = `${v.name} (${v.groesseHinweis})`;
+    el.setVersion.append(o);
+  }
+  knopfReihe(el.setTiefe, [20, 30, 40], E.tiefe, (v) => {
+    E.tiefe = v;
+    engineRechnen();
+  });
+  knopfReihe(el.setZeilen, [1, 2, 3, 4, 5], E.mehrzeilen, (v) => {
+    E.mehrzeilen = v;
+    engineRechnen();
+  });
+  knopfReihe(el.setThreads, [1, 2, 4, 8], E.threads, (v) => {
+    E.threads = v;
+    engineRechnen();
+  });
+  knopfReihe(el.setZeit, [5000, 8000, 30000, 0], E.maxZeitMs, (v) => {
+    E.maxZeitMs = v;
+    engineRechnen();
+  });
+  el.setBoard.replaceChildren();
+  for (const thema of THEMEN) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `feld-farbe${thema.name === 'brown' ? ' an' : ''}`;
+    b.title = thema.name;
+    b.setAttribute('aria-label', thema.name);
+    b.style.background = `linear-gradient(135deg, ${thema.hell} 50%, ${thema.dunkel} 50%)`;
+    b.addEventListener('click', () => {
+      for (const kind of el.setBoard.children) kind.classList.remove('an');
+      b.classList.add('an');
+      document.documentElement.style.setProperty('--hell', thema.hell);
+      document.documentElement.style.setProperty('--dunkel', thema.dunkel);
+    });
+    el.setBoard.append(b);
+  }
+  el.setFiguren.replaceChildren();
+  for (const [id, name] of [
+    ['classic', 'Classic'],
+    ['maestro', 'Maestro'],
+    ['retro', 'Retro'],
+  ]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.className = id === 'classic' ? 'an' : '';
+    b.addEventListener('click', () => {
+      for (const kind of el.setFiguren.children) kind.classList.remove('an');
+      b.classList.add('an');
+    });
+    el.setFiguren.append(b);
+  }
+  el.setSeite.replaceChildren();
+  for (const [id, name] of [
+    ['dark', 'Default'],
+    ['fire', 'Fire'],
+    ['emerald', 'Emerald'],
+  ]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.className = id === 'dark' ? 'an' : '';
+    b.addEventListener('click', () => {
+      for (const kind of el.setSeite.children) kind.classList.remove('an');
+      b.classList.add('an');
+    });
+    el.setSeite.append(b);
+  }
+}
+
+function dialogOeffnen() {
+  einstellungenFuellen();
+  el.dialog.hidden = false;
+  el.dialogFertig.focus();
+}
+
+function dialogSchliessen() {
+  el.dialog.hidden = true;
+}
+
+el.btnEinstellungen.addEventListener('click', dialogOeffnen);
+el.dialogFertig.addEventListener('click', dialogSchliessen);
+el.dialogZu.addEventListener('click', dialogSchliessen);
+el.dialog.addEventListener('click', (e) => {
+  if (e.target === el.dialog) dialogSchliessen();
+});
+
+/** Der Hilfe-Dialog: alle Tasten, wie bei lichess mit "?". */
+const TASTEN = [
+  ['← / →', 'Zug zurück / vor'],
+  ['j / k', 'Zug zurück / vor'],
+  ['↑ / ↓', 'Anfang / Ende'],
+  ['0 / $', 'Anfang / Ende'],
+  ['shift+← / →', 'in die Variante / zurück'],
+  ['space', 'besten Engine-Zug spielen'],
+  ['f', 'Brett drehen'],
+  ['x', 'Drohung zeigen'],
+  ['l', 'Bewertung ein / aus'],
+  ['a', 'Besten-Zug-Pfeile'],
+  ['?', 'diese Hilfe'],
+];
+
+function hilfeFuellen() {
+  const frag = document.createDocumentFragment();
+  for (const [taste, was] of TASTEN) {
+    const zeile = document.createElement('div');
+    const k = document.createElement('kbd');
+    k.textContent = taste;
+    const t = document.createElement('span');
+    t.textContent = was;
+    zeile.append(k, t);
+    frag.append(zeile);
+  }
+  el.hilfeListe.replaceChildren(frag);
+}
+
+el.hilfeZu.addEventListener('click', () => {
+  el.hilfe.hidden = true;
+});
+el.hilfe.addEventListener('click', (e) => {
+  if (e.target === el.hilfe) el.hilfe.hidden = true;
+});
 
 // ------------------------------------------------------------------ Knöpfe
 
-el.btnZurueck.addEventListener('click', zurueck);
-el.btnNeu.addEventListener('click', () => lade(startFen(), { meldung: 'New game.' }));
+el.btnFENSetzen.addEventListener('click', () => lade(el.fen.value.trim()));
+el.btnLeer.addEventListener('click', () => lade(startFen(), { meldung: 'Board reset.' }));
 el.btnDrehen.addEventListener('click', () => {
   S.gedreht = !S.gedreht;
   zeichne();
 });
 el.btnStart.addEventListener('click', () => geheZu(0));
-el.btnPrev.addEventListener('click', () => geheZu(S.cursor - 1));
-el.btnNext.addEventListener('click', () => geheZu(S.cursor + 1));
-el.btnEnd.addEventListener('click', () => geheZu(S.verlauf.length));
+el.btnZurueck.addEventListener('click', zurueck);
+el.btnWeiter.addEventListener('click', () => geheZu(S.cursor + 1));
+el.btnEnde.addEventListener('click', () => geheZu(S.verlauf.length));
 
-el.btnSetzen.addEventListener('click', () => lade(el.fen.value.trim(), { meldung: 'Position loaded.' }));
-
-el.btnTeilen.addEventListener('click', async () => {
-  history.replaceState(null, '', `${location.pathname}#${encodeURIComponent(toFen(S.pos))}`);
+async function insZwischenablage(text, was) {
   try {
-    await navigator.clipboard.writeText(location.href);
-    sag('Address copied.', 'ok');
+    await navigator.clipboard.writeText(text);
+    sag(`${was} copied.`, 'ok');
   } catch {
-    sag('The address is in the bar - copy it there.', null);
+    sag(`Could not copy - ${was} is in the address bar.`, null);
   }
+}
+
+el.btnFENKopieren.addEventListener('click', () => insZwischenablage(toFen(S.pos), 'FEN'));
+el.btnPGNKopieren.addEventListener('click', () =>
+  insZwischenablage(
+    `1. ${S.verlauf.map((z) => z.san).join(' ')} ${outcome(S.pos) ?? '*'}`,
+    'PGN',
+  ),
+);
+el.btnSpeichern.addEventListener('click', () => el.btnPGNKopieren.click());
+el.btnPGNImport.addEventListener('click', () => {
+  sag('Paste a PGN into the FEN field, then press "Insert FEN".', null);
 });
 
+// ------------------------------------------------------------------ Tastatur
+
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || S.offen) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || S.offen) return;
   if (e.key === 'ArrowLeft') geheZu(S.cursor - 1);
   else if (e.key === 'ArrowRight') geheZu(S.cursor + 1);
+  else if (e.key === 'ArrowUp') geheZu(0);
+  else if (e.key === 'ArrowDown') geheZu(S.verlauf.length);
   else if (e.key === 'f') el.btnDrehen.click();
-  else if (e.key === 'n') el.btnNeu.click();
+  // Besten Engine-Zug spielen - der Grund, warum die Engine ueberhaupt da ist
+  else if (e.key === ' ' && E.an && E.besterZug) {
+    e.preventDefault();
+    const uci = E.besterZug;
+    const treffer = zugNach(parseSquare(uci.slice(0, 2)), parseSquare(uci.slice(2, 4)));
+    if (treffer !== undefined) fertig(treffer);
+    else sag('Der beste Zug ist in dieser Stellung nicht möglich.', null);
+  } else if (e.key === '?') {
+    hilfeFuellen();
+    el.hilfe.hidden = !el.hilfe.hidden;
+  }
 });
 
 // ------------------------------------------------------------------ Start
 
 baueBrett();
-const ausHash = decodeURIComponent(location.hash.replace(/^#/, ''));
-lade(ausHash.includes('/') ? ausHash : startFen());
+hilfeFuellen();
+einstellungenFuellen();
+lade(adresseLesen() ?? startFen());

@@ -64,6 +64,13 @@ seite.on('pageerror', (e) => konsolenfehler.push(String(e)));
 
 /** Feld über seinen Namen finden - "e2" ist Feld 12, egal ob gedreht. */
 async function feld(page, name) {
+  // Erst das Brett in den Blick räumen. Auf dem Handy liegt die
+  // Werkzeugspalte darunter: nach einem Klick auf "Insert FEN" ist die Seite
+  // nach unten gescrollt, und die oberste Brettreihe hat dann y = -29. Ein
+  // Klick auf solche Koordinaten trifft ins Leere - und der Test meldet
+  // einen Fehler, den es auf der Seite nicht gibt.
+  await page.locator('.brett-halter').scrollIntoViewIfNeeded().catch(() => {});
+  await page.waitForTimeout(60);
   const i = await page.evaluate((n) => {
     // Beschriftung zuerst: die stimmt immer, auch wenn das Brett gedreht ist.
     const felder = [...document.querySelectorAll('.feld')];
@@ -96,6 +103,17 @@ async function dreheAuf(page, gedreht) {
     await page.click('#btnDrehen');
     await page.waitForTimeout(140);
   }
+}
+
+/** Stand aus der Zugsliste lesen: "aktiv/gesamt". Das ist die Anzeige, die
+ *  auf der Seite steht - vorher stand sie in einem eigenen Feld (#stand). */
+async function stand(page) {
+  return page.evaluate(() => {
+    const knoepfe = [...document.querySelectorAll('#zuege .zug-knopf')];
+    const echt = knoepfe.filter((k) => !k.disabled && k.textContent.trim());
+    const aktiv = knoepfe.findIndex((k) => k.classList.contains('an'));
+    return `${aktiv + 1}/${echt.length}`;
+  });
 }
 
 /** Zwei Felder nacheinander antippen (die Art, die man einhändig bedient). */
@@ -176,8 +194,8 @@ zuege[0] === sanE4
   ? ok(`Notation wie der Generator: "${zuege[0]}"`)
   : bad(`Notation "${zuege[0]}" statt "${sanE4}"`);
 
-const stand = await seite.locator('#stand').textContent();
-stand.trim() === '1/1' ? ok('Stand 1/1') : bad(`Stand "${stand}" statt 1/1`);
+const standAnfang = await stand(seite);
+standAnfang === '1/1' ? ok('Stand 1/1') : bad(`Stand "${standAnfang}" statt 1/1`);
 
 const feldE4 = await seite.locator('.feld.besetzt, .feld').nth(0);
 await seite.screenshot({ path: `${shots}/20-brett.png`, fullPage: true });
@@ -214,7 +232,7 @@ const schwarzZog = await seite.locator('#fen').inputValue();
   ? ok('Schwarz zieht, sobald Schwarz dran ist')
   : bad(`Schwarz kam nicht dran: ${schwarzZog}`);
 
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(100);
 
 // e2 nach e5 geht nicht: zwei Felder ueberspringen kann ein Bauer nicht.
@@ -223,7 +241,7 @@ const nachSprung = await seite.locator('#fen').inputValue();
 nachSprung === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
   ? ok('Zwei-Felder-Sprung abgelehnt')
   : bad(`Bauer durfte zwei Felder springen: ${nachSprung}`);
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(100);
 
 // ------------------------------------------------------------------ 4 Ziehen
@@ -247,7 +265,7 @@ step('5 · Mögliche Züge werden angezeigt');
 // Zuggenerator geholt, nicht geraten.
 const offen = '7k/8/8/3Q4/8/8/8/7K w - - 0 1';
 await seite.fill('#fen', offen);
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(120);
 const d5 = await feld(seite, 'd5');
 await seite.mouse.click(d5.box.x + d5.box.width / 2, d5.box.y + d5.box.height / 2);
@@ -270,7 +288,7 @@ ringe === schlagt
   ? ok(`${ringe} Ringe um besetzte Felder - so viele Schlagziele gibt es wirklich`)
   : bad(`${ringe} Ringe statt ${schlagt}`);
 await seite.screenshot({ path: `${shots}/22-auswahl.png`, fullPage: true });
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(100);
 
 // ------------------------------------------------------------------ 6 Zurueck
@@ -291,19 +309,19 @@ fenNachUndo.includes('4p3') === false
 
 await seite.click('#btnStart');
 await seite.waitForTimeout(150);
-const standAnfang = (await seite.locator('#stand').textContent()).trim();
-standAnfang === '0/1' ? ok('Sprung zum Anfang') : bad(`Sprung zum Anfang: Stand "${standAnfang}" statt 0/1`);
+const standStart = await stand(seite);
+standStart === '0/1' ? ok('Sprung zum Anfang') : bad(`Sprung zum Anfang: Stand "${standStart}" statt 0/1`);
 const fenStart = await seite.locator('#fen').inputValue();
 fenStart === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
   ? ok('Startstellung wiederhergestellt')
   : bad(`FEN am Anfang: ${fenStart}`);
-await seite.click('#btnEnd');
+await seite.click('#btnEnde');
 await seite.waitForTimeout(80);
 
 // Klick auf einen Zug in der Liste springt dorthin.
 await seite.locator('#zuege button').nth(0).click();
 await seite.waitForTimeout(80);
-(await seite.locator('#stand').textContent()).trim() === '1/1'
+await stand(seite) === '1/1'
   ? ok('Klick auf "e4" in der Liste springt dorthin')
   : bad('Klick in der Liste sprang nicht');
 
@@ -334,7 +352,7 @@ const schachfaelle = [
 
 for (const { fen, erwartet, warum } of schachfaelle) {
   await seite.fill('#fen', fen);
-  await seite.click('#btnSetzen');
+  await seite.click('#btnFENSetzen');
   await seite.waitForTimeout(140);
   const markiert = await seite.evaluate(() => {
     const f = document.querySelector('.feld.schach');
@@ -354,7 +372,7 @@ for (const { fen, erwartet, warum } of schachfaelle) {
 
 // Und die Markierung muss dem Brett folgen, wenn es gedreht wird.
 await seite.fill('#fen', 'R3k3/8/8/8/8/8/8/4K3 b - - 0 1');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(140);
 await dreheAuf(seite, true);
 const markiertGedreht = await seite.evaluate(() => {
@@ -365,7 +383,7 @@ markiertGedreht === 'black king on e8'
   ? ok('gedreht bleibt der schwarze König auf e8 markiert')
   : bad(`gedreht markiert: ${markiertGedreht}`);
 await dreheAuf(seite, false);
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(100);
 
 // ------------------------------------------------------------------ 7 Drehen
@@ -399,7 +417,7 @@ dreimal ? ok(`Felder eingefärbt (${dreimal})`) : bad('Hintergrundfarbe fehlt');
 // Erst in eine bekannte Lage drehen, dann spielen, dann drehen - sonst
 // haengt der Schritt daran, was der vorherige zurueckgelassen hat.
 await dreheAuf(seite, false);
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(120);
 await tippeZug(seite, 'e2', 'e4');
 const fenGespielt = await seite.locator('#fen').inputValue();
@@ -432,7 +450,7 @@ await dreheAuf(seite, false);
 
 step('8 · Umbau');
 await seite.fill('#fen', '4k3/P7/8/8/8/8/8/4K3 w - - 0 1');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(120);
 await tippeZug(seite, 'a7', 'a8');
 await seite.waitForSelector('#promo:not([hidden])', { timeout: 5000 }).catch(() => {});
@@ -458,19 +476,19 @@ if (dialogOffen) {
 
 step('9 · Matt und Remis werden erkannt');
 await seite.fill('#fen', 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(120);
-const mattText = await seite.locator('#hinweis').textContent();
+const mattText = await seite.locator('#bescheid').textContent();
 /Black wins/i.test(mattText)
   ? ok(`eine eingetippte Endstellung wird angesagt: "${mattText.trim()}"`)
   : bad(`Endstellung nicht angesagt: "${mattText.trim()}"`);
 
 // Und der Matt muss auch entstehen, wenn er gespielt wird.
 await seite.fill('#fen', 'rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 3');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(120);
 await tippeZug(seite, 'd8', 'h4'); // Damenopfer, das ist Matt
-const mattGespielt = await seite.locator('#hinweis').textContent();
+const mattGespielt = await seite.locator('#bescheid').textContent();
 /Black wins|Black wins/i.test(mattGespielt)
   ? ok(`der gespielte Matt wird erkannt: "${mattGespielt.trim()}"`)
   : bad(`Matt beim Spielen nicht erkannt: "${mattGespielt.trim()}"`);
@@ -479,7 +497,7 @@ const mattGespielt = await seite.locator('#hinweis').textContent();
 
 step('10 · Stellung eintippen');
 await seite.fill('#fen', 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(120);
 const feldC4 = await seite.locator('.feld .figur use').count();
 feldC4 === 32 ? ok('32 Figuren geladen') : bad(`${feldC4} Figuren geladen`);
@@ -491,9 +509,9 @@ const c4Da = await seite.evaluate(() => {
 c4Da ? ok('der Laeufer steht auf c4, wie eingetippt') : bad('der Laeufer steht nicht auf c4');
 
 await seite.fill('#fen', 'das ist keine stellung');
-await seite.click('#btnSetzen');
+await seite.click('#btnFENSetzen');
 await seite.waitForTimeout(150);
-const fehlerText = await seite.locator('#hinweis').textContent();
+const fehlerText = await seite.locator('#bescheid').textContent();
 // Wichtig ist das Brett, nicht das Eingabefeld: dort steht weiterhin, was
 // getippt wurde - das ist Absicht, damit man korrigieren kann.
 const laeuftWeiter = await seite.evaluate(
@@ -508,7 +526,7 @@ fehlerText.includes('FEN') && laeuftWeiter
 step('11 · Bedienbarkeit mit einer Hand');
 const masse = await seite.evaluate(() => {
   const r = document.querySelector('.feld').getBoundingClientRect();
-  const k = document.getElementById('btnNeu').getBoundingClientRect();
+  const k = document.getElementById('btnLeer').getBoundingClientRect();
   return { feld: r.width, knopf: k.height };
 });
 masse.feld >= 46
@@ -525,17 +543,20 @@ ueberlauf <= 1 ? ok('kein waagerechter Überlauf') : bad(`${ueberlauf} px Überl
 // ------------------------------------------------------------------ 12 Adresse
 
 step('12 · Stellung in der Adresse');
-await seite.click('#btnNeu');
+await seite.click('#btnLeer');
 await seite.waitForTimeout(100);
-await seite.click('#btnTeilen');
+// Die Stellung steht wie bei lichess im ?fen= - ohne eigenen Knopf.
+await tippeZug(seite, 'e2', 'e4');
 await seite.waitForTimeout(150);
 const url = seite.url();
-url.includes('#') ? ok('Adresse enthält die Stellung') : bad(`Adresse ohne Stellung: ${url}`);
+url.includes('fen=') && decodeURIComponent(url.split('fen=')[1].split('&')[0]).includes('4P3')
+  ? ok(`Adresse enthält die Stellung: ${decodeURIComponent(url.split('fen=')[1].split('&')[0])}`)
+  : bad(`Adresse ohne Stellung: ${url}`);
 const seite2 = await kontext.newPage();
 await seite2.goto(url, { waitUntil: 'load' });
 await seite2.waitForSelector('.feld');
-const stand2 = await seite2.locator('#stand').textContent();
-stand2.trim() === '0/0' ? ok('geladene Seite startet in der Startstellung') : bad(`Stand ${stand2}`);
+const stand2 = await stand(seite2);
+stand2 === '0/0' ? ok('geladene Seite startet in der Startstellung') : bad(`Stand ${stand2}`);
 await seite2.close();
 
 // ------------------------------------------------------------------ 13 Finger

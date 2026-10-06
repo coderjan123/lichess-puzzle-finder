@@ -23,6 +23,12 @@ const TYPES = {
   '.webmanifest': 'application/manifest+json',
   '.ico': 'image/x-icon',
   '.gz': 'application/gzip',
+  // Die Engine braucht .wasm mit genau diesem Typ. Ohne ihn bricht der
+  // Worker ab ("Response has unsupported MIME type"), weil das
+  // Streaming-Compilieren nicht greift - GitHub Pages liefert .wasm richtig,
+  // der Testserver eben nicht, und die Seite sah deshalb kaputt aus, obwohl
+  // sie auf dem Server laufen wuerde.
+  '.wasm': 'application/wasm',
 };
 const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.webmanifest', '.svg']);
 

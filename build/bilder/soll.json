@@ -1,0 +1,53 @@
+{
+  "_erlaeuterung": [
+    "Soll-Masse aus den Screenshots des Nutzers, ausgemessen am 5.10.2026 mit",
+    "build/mess.py (Pillow): Kanten aus der Pixelmatrix, nicht geschaetzt.",
+    "Quelle: /home/jan/Schreibtisch/schachbilder/*.png",
+    "",
+    "WICHTIG: das Brett in den Screenshots traegt ein Holz-Thema mit Texture.",
+    "Wir bauen flache Farbthemen (lichess-Standard 'brown'). Die Pixel werden",
+    "deshalb NICHT im Brettbereich verglichen - dort kann man die Textur nicht",
+    "nachbauen. Verglichen werden Geometrie, Abstaende, Hoehen und Farben der",
+    "Werkzeugspalte. Fuer das Brett zaehlen die gemessenen Feld- und",
+    "Brettmasse, nicht die Pixel."
+  ],
+  "fenster": [
+    { "breite": 1920, "hoehe": 916, "bild": "Bildschirmfoto_20261005_153519.png" },
+    { "breite": 1920, "hoehe": 898, "bild": "Bildschirmfoto_20261005_153404.png" },
+    { "breite": 1920, "hoehe": 898, "bild": "Bildschirmfoto_20261005_153433.png" }
+  ],
+  "geometrie": {
+    "toleranzPx": 3,
+    "brett": { "groesse": 808, "feld": 101 },
+    "lueckeBrettPanel": 31,
+    "panel": { "breite": 520, "breiteFlexibel": true, "oberkanteGleichBrett": true, "hoehe": 808 }
+  },
+  "farben": {
+    "_herkunft": "aus den Screenshots abgelesen; das Panel misst #282525, der echte",
+    "_hinweis": "lichess-Wert ist #262421 - die Screenshots sind leicht farbverschoben",
+    "toleranz": 6,
+    "seite": "#000000",
+    "panel": "#262421",
+    "blauKnopf": "#5c80c8",
+    "gruenBalken": "#35a62a",
+    "gruenPfeil": "#34a428",
+    "schriftHell": "#bababa",
+    "schriftGruen": "#629924",
+    "schriftOrange": "#ff9800",
+    "schriftRot": "#f44336"
+  },
+  "panelHoehen": {
+    "_herkunft": "Tintenprofil je Zeile; Werte sind die Hoehe des Elements in px",
+    "_toleranz": 4,
+    "werkzeugleiste": 27,
+    "fensterFeld": 32,
+    "knopfReihe": 24,
+    "engineBlock": 114,
+    "zugZeile": 23,
+    "reiterLeiste": 36,
+    "tabellenKopf": 18,
+    "tabellenZeileAbstand": 33,
+    "summeZeile": 18,
+    "werkzeugleisteUnten": 46
+  }
+}
