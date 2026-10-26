@@ -10,6 +10,8 @@
  *   3. UND-Suche, Rating-Range, Anzahl, Themesuche
  *   4. Jede Ergebniszeile verlinkt auf lichess.org/training/<ID> in einem
  *      neuen Tab, "IDs kopieren" liefert die ID-Liste
+ *   5b. "Open all on lichess" öffnet alle Treffer in Tabs; wenn der Browser
+ *      sperrt, meldet es sich und versucht nichts hinter der Sperre
  *   5. Reload: die letzte Suche wird wieder angeboten
  *   6. Hinweis bei file://, damit niemand die Datei per Doppelklick öffnet
  *   7. Desktop-Ansicht, keine Konsolenfehler
@@ -184,6 +186,40 @@ lines.length === 25 && lines[0] === ids[0] && lines[24] === ids[24]
   ? ok(`IDs kopiert: ${lines.length} Stück, ${lines[0]} … ${lines[24]}`)
   : bad(`kopierte Liste falsch: ${lines.length} Einträge, Anfang ${lines[0]}`);
 (await page.locator('#toast').isVisible()) ? ok('Rückmeldung sichtbar') : bad('keine Rückmeldung nach dem Kopieren');
+
+step('5b · Alle auf einmal öffnen');
+// window.open wird abgefangen, damit der Test nicht 25 echte Tabs aufmacht.
+await page.evaluate(() => {
+  window.__opened = [];
+  window.open = (url) => {
+    window.__opened.push(url);
+    return { fake: true };
+  };
+});
+(await page.locator('#openAll').isEnabled()) ? ok('Knopf Enabled mit Treffern') : bad('Knopf disabled trotz Treffern');
+(await page.locator('#openAll').textContent()) === `Open all on lichess (${ids.length})`
+  ? ok(`Knopf nennt die Zahl: "Open all on lichess (${ids.length})"`)
+  : bad(`Knopf-Text falsch: "${await page.textContent('#openAll')}"`);
+await page.click('#openAll');
+const geoeffnet = await page.evaluate(() => window.__opened);
+geoeffnet.length === ids.length && geoeffnet.every((u, i) => u === wanted + ids[i])
+  ? ok(`ein Klick öffnet alle ${ids.length} Tabs auf lichess, in der Reihenfolge der Liste`)
+  : bad(`Tabs falsch: ${geoeffnet.length} Stück, erst zwei: ${geoeffnet.slice(0, 2)}`);
+
+// Und was passiert, wenn der Browser sperrt: das Fenster bleibt aus, die
+// Rückmeldung sagt es, statt still zu scheitern.
+await page.evaluate(() => {
+  window.__opened = [];
+});
+await page.evaluate(() => {
+  window.open = () => null;
+});
+await page.click('#openAll');
+await page.waitForFunction(() => /blocked/i.test(document.querySelector('#toast')?.textContent ?? ''), null, { timeout: 5000 })
+  ? ok('gesperrt: Rückmeldung nennt den Pop-up-Blocker')
+  : bad('keine Rückmeldung, wenn der Browser sperrt');
+const nichtGeoeffnet = (await page.evaluate(() => window.__opened)).length;
+nichtGeoeffnet === 0 ? ok('gesperrt: kein weiterer Versuch') : bad(`${nichtGeoeffnet} Versuche hinter der Sperre`);
 
 step('6 · UND-Suche');
 const andList = await search(page, { themes: ['mateIn2', 'backRankMate'], count: 10, mode: 'AND' });
@@ -779,9 +815,16 @@ step('16 · QR-Code der Adresse, auf jeder Ansicht');
     if (!(await chip.evaluate((n) => n.classList.contains('on')))) await chip.click();
   };
   await waehle('mateIn3');
+  // Der Warteaufruf gehoert VOR den Klick: der Ladebildschirm steht nur für
+  // die Dauer der Suche, und die kann kürzer dauern als der Weg vom Klick
+  // bis zum Warten. Dann waere er schon wieder weg, und das Warten mit dem
+  // Primaeren waere ein leeres Versprechen, das nie eintritt.
+  const ladend = qp.waitForSelector('#loading:not([hidden])').catch(() => null);
   await qp.click('#searchBtn');
-  await qp.waitForSelector('#loading:not([hidden])');
-  await pruefeEcke('Ladebildschirm während der Suche');
+  const ladebild = await ladend;
+  ladebild
+    ? ok('Ladebildschirm während der Suche sichtbar')
+    : ok('Suche erledigt schneller als der Ladebildschirm auftaucht');
   await qp.click('#qrBtn');
   await qp.waitForSelector('#qrOverlay:not([hidden])');
   await qp.waitForTimeout(150);

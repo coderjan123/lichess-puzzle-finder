@@ -66,6 +66,7 @@ const el = {
   resultInfo: $('resultInfo'),
   resultList: $('resultList'),
   playFirst: $('playFirst'),
+  openAll: $('openAll'),
   copyIds: $('copyIds'),
   copyLink: $('copyLink'),
   snapshotNote: $('snapshotNote'),
@@ -833,10 +834,45 @@ function renderResults() {
 
   el.playFirst.disabled = items.length === 0;
   el.playFirst.textContent = `▶ Open on lichess (${items.length})`;
+  const openAll = el.openAll;
+  openAll.disabled = items.length === 0;
+  openAll.textContent = `Open all on lichess (${items.length})`;
   el.copyIds.disabled = items.length === 0;
 }
 
 el.playFirst.onclick = () => state.results.length && window.open(puzzleUrl(state.results[0].id), '_blank', 'noopener');
+
+/**
+ * Öffnt jedes Ergebnis in einem eigenen Tab auf lichess – ein Klick, alle
+ * Tabs. Zwei Grenzen kommen vom Browser, nicht von hier, und beide werden
+ * gemeldet, statt sich zu beschweren, dass "nichts passiert":
+ *
+ *  - Pop-up-Blocker: nur Fenster aus einer Nutzereingabe dürfen aufgehen.
+ *    Was der Browser zurückweist, kommt als null zurück – dann bricht der
+ *    Lauf ab, damit nicht tausend Anfragen an den Blocker verschwendet
+ *    werden, und die Nachricht sagt, wie man ihn aufsperrt.
+ *  - Höchstzahl: Firefox hält standardmäßig 20 Fenster pro Klick aus
+ *    (dom.popup_maximum), Chrome sammelt viele Tabs in einer Gruppe. Zu
+ *    tausend Tabs ist ohnehin niemandem gedient; ab dieser Zahl warnt die
+ *    Nachricht vor dem eigenen Rechner, nicht dem Blocker.
+ */
+el.openAll.onclick = () => {
+  const liste = state.results;
+  let offen = 0;
+  for (const item of liste) {
+    const fenster = window.open(puzzleUrl(item.id), '_blank', 'noopener');
+    if (!fenster) {
+      const block =
+        `Opened ${offen} of ${liste.length} tabs – the browser stopped the rest.` +
+        ' Allow pop-ups for this site and try again.';
+      toast(offen ? block : 'The browser blocked all tabs. Allow pop-ups for this site.');
+      return;
+    }
+    offen++;
+  }
+  const warnung = offen > 100 ? ` – that is a lot of tabs at once, your computer has to carry them.` : '';
+  toast(`Opened ${offen} tabs on lichess${warnung}`);
+};
 
 /** Kopiert in die Zwischenablage, mit Rückfall für Browser ohne API. */
 async function copyText(text, message) {
